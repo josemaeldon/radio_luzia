@@ -39,6 +39,10 @@ final class RadioPlayer {
     private var shouldResumeAfterInterruption = false
     private var interruptionResumeTask: Task<Void, Never>?
     private var currentArtworkSongID: String?
+    private var pausedAt: Date?
+    private let stalePauseThreshold: TimeInterval = 15
+    private var lastAppliedPlayedAt: Int?
+    private var lastAppliedElapsed: Double?
 
     var currentTrack: PlayingTrack? { nowPlaying?.nowPlaying }
     var isPlaying: Bool { state == .playing || state == .connecting }
@@ -76,13 +80,18 @@ final class RadioPlayer {
             return
         }
         interruptionResumeTask?.cancel()
-        _ = activateAndPlay()
+        let recreateItem = pausedAt.map { Date().timeIntervalSince($0) >= stalePauseThreshold } ?? false
+        pausedAt = nil
+        if activateAndPlay(recreateItemIfNeeded: recreateItem) {
+            schedulePlaybackRecovery()
+        }
     }
 
     func pause() {
         wantsPlayback = false
         shouldResumeAfterInterruption = false
         interruptionResumeTask?.cancel()
+        pausedAt = Date()
         player.pause()
         state = .paused
         updateNowPlayingCenter()
@@ -126,9 +135,35 @@ final class RadioPlayer {
     }
 
     private func apply(_ model: NowPlaying) {
+        // The websocket can replay publications after reconnecting. Do not let
+        // an older publication move the title backwards while the stream is
+        // already playing a newer song.
+        if let incomingPlayedAt = model.nowPlaying.playedAt,
+           let currentPlayedAt = lastAppliedPlayedAt,
+           incomingPlayedAt < currentPlayedAt {
+            return
+        }
+        if let incomingPlayedAt = model.nowPlaying.playedAt,
+           let currentPlayedAt = lastAppliedPlayedAt,
+           incomingPlayedAt == currentPlayedAt,
+           let incomingElapsed = model.nowPlaying.elapsed,
+           let currentElapsed = lastAppliedElapsed,
+           incomingElapsed < currentElapsed {
+            return
+        }
+
         let songChanged = currentTrack?.song.id != model.nowPlaying.song.id
         nowPlaying = model
-        lastMetadataUpdate = Date()
+        lastAppliedPlayedAt = model.nowPlaying.playedAt
+        lastAppliedElapsed = model.nowPlaying.elapsed
+        if let playedAt = model.nowPlaying.playedAt,
+           let elapsed = model.nowPlaying.elapsed {
+            // Anchor the progress to the server timeline instead of the
+            // moment a websocket packet happened to arrive on this device.
+            lastMetadataUpdate = Date(timeIntervalSince1970: Double(playedAt) + elapsed)
+        } else {
+            lastMetadataUpdate = Date()
+        }
         if selectedMountID == nil || !model.station.mounts.contains(where: { $0.id == selectedMountID }) {
             let saved = UserDefaults.standard.integer(forKey: "selectedMountID")
             selectedMountID = model.station.mounts.contains(where: { $0.id == saved })
@@ -286,12 +321,35 @@ final class RadioPlayer {
             guard let self else { return }
             for attempt in 0..<8 {
                 guard !Task.isCancelled, self.wantsPlayback else { return }
-                if self.activateAndPlay(recreateItemIfNeeded: recreateItem) { return }
+                if self.activateAndPlay(recreateItemIfNeeded: recreateItem) {
+                    self.schedulePlaybackRecovery()
+                    return
+                }
                 if attempt < 7 { try? await Task.sleep(for: .milliseconds(400)) }
             }
             guard self.wantsPlayback else { return }
             self.state = .failed("Não foi possível retomar o áudio.")
             self.updateNowPlayingCenter()
+        }
+    }
+
+    /// `AVPlayer.play()` can succeed while the item remains stuck in a
+    /// waiting state after a long pause. Reopening the live stream gives the
+    /// player a fresh connection instead of leaving the UI spinning forever.
+    private func schedulePlaybackRecovery() {
+        interruptionResumeTask?.cancel()
+        interruptionResumeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 0..<3 {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, self.wantsPlayback else { return }
+                guard self.player.timeControlStatus != .playing else { return }
+                _ = self.activateAndPlay(recreateItemIfNeeded: true)
+                if attempt == 2 {
+                    self.state = .failed("Não foi possível iniciar o áudio.")
+                    self.updateNowPlayingCenter()
+                }
+            }
         }
     }
 
@@ -304,7 +362,9 @@ final class RadioPlayer {
             self.state = .connecting
             self.activeStreamURL = nil
             self.player.replaceCurrentItem(with: nil)
-            _ = self.activateAndPlay()
+            if self.activateAndPlay() {
+                self.schedulePlaybackRecovery()
+            }
         }
     }
 
