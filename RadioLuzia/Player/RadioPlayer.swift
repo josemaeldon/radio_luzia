@@ -25,12 +25,6 @@ final class RadioPlayer {
     private(set) var lastMetadataUpdate = Date()
     private(set) var selectedMountID: Int?
     var errorMessage: String?
-    var volume: Double = UserDefaults.standard.object(forKey: "playerVolume") as? Double ?? 0.8 {
-        didSet {
-            player.volume = Float(volume)
-            UserDefaults.standard.set(volume, forKey: "playerVolume")
-        }
-    }
 
     private let api = AzuraCastAPI.shared
     private let socket = NowPlayingSocket()
@@ -53,7 +47,6 @@ final class RadioPlayer {
     }
 
     init() {
-        player.volume = Float(volume)
         configureAudioSession()
         configurePlayerObservation()
         configureRemoteCommands()

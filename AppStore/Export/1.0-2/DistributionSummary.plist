@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>RadioLuzia.ipa</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>arm64</string>
+			</array>
+			<key>buildNumber</key>
+			<string>2</string>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>110A9D78927CA4719FA1E9F49426A2596B602210</string>
+				<key>dateExpires</key>
+				<string>07/08/27</string>
+				<key>type</key>
+				<string>Apple Distribution</string>
+			</dict>
+			<key>entitlements</key>
+			<dict>
+				<key>application-identifier</key>
+				<string>DHLAYBVJ2Z.br.com.cloudbrapp.radioluzia</string>
+				<key>beta-reports-active</key>
+				<true/>
+				<key>com.apple.developer.team-identifier</key>
+				<string>DHLAYBVJ2Z</string>
+				<key>get-task-allow</key>
+				<false/>
+			</dict>
+			<key>name</key>
+			<string>RadioLuzia.app</string>
+			<key>profile</key>
+			<dict>
+				<key>UUID</key>
+				<string>fe73c49a-19f9-40e7-8293-c458e3368015</string>
+				<key>dateExpires</key>
+				<string>07/08/27</string>
+				<key>name</key>
+				<string>iOS Team Store Provisioning Profile: br.com.cloudbrapp.radioluzia</string>
+			</dict>
+			<key>symbols</key>
+			<true/>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>DHLAYBVJ2Z</string>
+				<key>name</key>
+				<string></string>
+			</dict>
+			<key>versionNumber</key>
+			<string>1.0</string>
+		</dict>
+	</array>
+</dict>
+</plist>

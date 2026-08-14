@@ -24,7 +24,7 @@ Recursos:
 • transmissão ao vivo com reprodução em segundo plano;
 • metadados e capas atualizados em tempo real;
 • barra de progresso da música atual;
-• controle de volume inspirado no Apple Music;
+• volume do sistema sincronizado com os botões físicos;
 • histórico das músicas tocadas;
 • pedidos musicais pelo próprio app;
 • seleção da qualidade da transmissão;
@@ -51,3 +51,7 @@ Fluxo sugerido para revisão:
 
 - Política de privacidade: publique `docs/privacy.html` e informe a URL pública no App Store Connect.
 - Suporte: publique `docs/support.html` e informe a URL pública no App Store Connect.
+
+## Contato
+
+- Suporte e contato: admin@cloudbr.app

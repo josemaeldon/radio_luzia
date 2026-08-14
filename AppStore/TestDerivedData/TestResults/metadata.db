@@ -13,12 +13,12 @@
 				<key>testCustomFieldsAcceptsAzuraCastArrayShape</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.001605987548828125</real>
+					<real>0.0010950565338134766</real>
 				</dict>
 				<key>testDecodesRepresentativeAzuraCastPayload</key>
 				<dict>
 					<key>mrnet</key>
-					<real>0.0052480697631835938</real>
+					<real>0.0014840364456176758</real>
 				</dict>
 			</dict>
 		</dict>

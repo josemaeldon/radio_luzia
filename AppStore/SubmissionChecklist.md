@@ -4,7 +4,7 @@
 
 - [x] Nome de exibição “Rádio Santa Luzia”
 - [x] Bundle ID `br.com.cloudbrapp.radioluzia`
-- [x] Versão 1.0, build 1
+- [x] Versão 1.0, build 2
 - [x] Equipe de assinatura `DHLAYBVJ2Z`
 - [x] Ícone 1024 × 1024 sem transparência
 - [x] Áudio em segundo plano
@@ -12,6 +12,16 @@
 - [x] Manifesto de privacidade
 - [x] Metadados pt-BR e notas para revisão
 - [x] Três screenshots de iPhone e três de iPad
+- [x] Archive Release 1.0 (2) validado
+- [x] IPA App Store assinado com certificado Apple Distribution
+
+## Artefatos para envio
+
+- Archive: `AppStore/Archive/RadioSantaLuzia-1.0-2.xcarchive`
+- IPA: `AppStore/Export/1.0-2/RadioLuzia.ipa`
+- Screenshots iPhone: `AppStore/Screenshots/iPhone`
+- Screenshots iPad: `AppStore/Screenshots/iPad`
+- Metadados pt-BR: `AppStore/Metadata/pt-BR.md`
 
 ## Antes do envio no App Store Connect
 
@@ -20,7 +30,7 @@
 - [ ] Informar as URLs públicas de privacidade e suporte
 - [ ] Responder ao questionário de classificação etária (sugestão: 4+)
 - [ ] Confirmar contratos, dados bancários e fiscais da organização
-- [ ] Revisar copyright e canais de contato da Paróquia
+- [x] Contato de suporte: `admin@cloudbr.app`
 - [ ] Fazer upload do arquivo exportado pelo Xcode/Transporter
 - [ ] Selecionar o build e enviar para revisão
 

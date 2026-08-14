@@ -6,10 +6,73 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>E14A436C-8E87-4C19-9D13-721737D1011D</key>
+		<key>6492BC6F-AF9F-4F9E-9315-9B91C0D6BA85</key>
 		<dict>
 			<key>auxiliaryLogUniqueIdentifier</key>
-			<string>75624F06-69E6-439A-923C-85D3216B1221</string>
+			<string>5F929601-1A76-4A7A-AA09-E1DE8B1CA866</string>
+			<key>auxiliaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>10</integer>
+			</dict>
+			<key>className</key>
+			<string>IDESchemeActionsInvocationRecord</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>com.apple.dt.unit.cocoaUnitTest</string>
+			<key>fileName</key>
+			<string>Test-RadioLuzia-2026.08.14_02-19-31--0300.xcresult</string>
+			<key>hasAuxiliaryLog</key>
+			<true/>
+			<key>hasCoverageData</key>
+			<true/>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalCodeCoverage</key>
+				<real>0.30558375634517765</real>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>10</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>RadioLuzia project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>RadioLuzia</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Test RadioLuzia</string>
+			<key>timeStartedRecording</key>
+			<real>808377571.02689099</real>
+			<key>timeStoppedRecording</key>
+			<real>808377593.62920403</real>
+			<key>title</key>
+			<string>Test RadioLuzia</string>
+			<key>uniqueIdentifier</key>
+			<string>6492BC6F-AF9F-4F9E-9315-9B91C0D6BA85</string>
+		</dict>
+		<key>66707B45-CFA2-4AF3-9599-2BD700A2F193</key>
+		<dict>
+			<key>auxiliaryLogUniqueIdentifier</key>
+			<string>76454D25-D786-417E-9A06-519FB81BFBD0</string>
 			<key>auxiliaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
@@ -30,7 +93,7 @@
 			<key>domainType</key>
 			<string>com.apple.dt.unit.cocoaUnitTest</string>
 			<key>fileName</key>
-			<string>Test-RadioLuzia-2026.08.14_02-12-36--0300.xcresult</string>
+			<string>Test-RadioLuzia-2026.08.14_02-25-23--0300.xcresult</string>
 			<key>hasAuxiliaryLog</key>
 			<true/>
 			<key>hasCoverageData</key>
@@ -42,7 +105,7 @@
 				<key>highLevelStatus</key>
 				<string>W</string>
 				<key>totalCodeCoverage</key>
-				<real>0.30570995452248612</real>
+				<real>0.29655172413793102</real>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
@@ -61,13 +124,13 @@
 			<key>signature</key>
 			<string>Test RadioLuzia</string>
 			<key>timeStartedRecording</key>
-			<real>808377156.786358</real>
+			<real>808377923.58058405</real>
 			<key>timeStoppedRecording</key>
-			<real>808377195.38581598</real>
+			<real>808377949.50204802</real>
 			<key>title</key>
 			<string>Test RadioLuzia</string>
 			<key>uniqueIdentifier</key>
-			<string>E14A436C-8E87-4C19-9D13-721737D1011D</string>
+			<string>66707B45-CFA2-4AF3-9599-2BD700A2F193</string>
 		</dict>
 	</dict>
 </dict>

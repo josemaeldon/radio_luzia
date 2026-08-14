@@ -1,4 +1,5 @@
 import SwiftUI
+import MediaPlayer
 
 struct PlayerView: View {
     @Environment(RadioPlayer.self) private var player
@@ -200,15 +201,8 @@ struct PlayerView: View {
             HStack(spacing: 11) {
                 Image(systemName: "speaker.fill")
                     .font(.caption2.weight(.semibold))
-                Slider(
-                    value: Binding(
-                        get: { player.volume },
-                        set: { player.volume = $0 }
-                    ),
-                    in: 0...1
-                )
-                    .tint(.white.opacity(0.76))
-                    .controlSize(.small)
+                SystemVolumeSlider()
+                    .frame(height: 26)
                     .accessibilityLabel("Volume")
                 Image(systemName: "speaker.wave.3.fill")
                     .font(.caption2.weight(.semibold))
@@ -280,6 +274,85 @@ struct PlayerView: View {
         guard interval.isFinite else { return "0:00" }
         let seconds = max(Int(interval), 0)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct SystemVolumeSlider: UIViewRepresentable {
+    func makeUIView(context: Context) -> SystemVolumeControl {
+        SystemVolumeControl()
+    }
+
+    func updateUIView(_ control: SystemVolumeControl, context: Context) {}
+}
+
+private final class SystemVolumeControl: UIView {
+    private let visibleSlider = UISlider(frame: .zero)
+    private let systemVolumeView = MPVolumeView(frame: .zero)
+    private var outputVolumeObservation: NSKeyValueObservation?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configureView()
+        observeSystemVolume()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configureView()
+        observeSystemVolume()
+    }
+
+    private func configureView() {
+        visibleSlider.translatesAutoresizingMaskIntoConstraints = false
+        visibleSlider.minimumValue = 0
+        visibleSlider.maximumValue = 1
+        visibleSlider.minimumTrackTintColor = UIColor.white.withAlphaComponent(0.78)
+        visibleSlider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.13)
+        visibleSlider.thumbTintColor = .white
+        visibleSlider.accessibilityLabel = "Volume do sistema"
+        visibleSlider.accessibilityHint = "Também acompanha os botões físicos de volume"
+        visibleSlider.addTarget(self, action: #selector(volumeChanged), for: .valueChanged)
+
+        systemVolumeView.translatesAutoresizingMaskIntoConstraints = false
+        systemVolumeView.showsVolumeSlider = true
+        systemVolumeView.alpha = 0.001
+        systemVolumeView.isUserInteractionEnabled = false
+
+        addSubview(visibleSlider)
+        addSubview(systemVolumeView)
+        NSLayoutConstraint.activate([
+            visibleSlider.leadingAnchor.constraint(equalTo: leadingAnchor),
+            visibleSlider.trailingAnchor.constraint(equalTo: trailingAnchor),
+            visibleSlider.centerYAnchor.constraint(equalTo: centerYAnchor),
+            systemVolumeView.widthAnchor.constraint(equalToConstant: 1),
+            systemVolumeView.heightAnchor.constraint(equalToConstant: 1),
+            systemVolumeView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            systemVolumeView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        visibleSlider.value = AVAudioSession.sharedInstance().outputVolume
+    }
+
+    private func observeSystemVolume() {
+        outputVolumeObservation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.initial, .new]) {
+            [weak self] session, _ in
+            DispatchQueue.main.async {
+                guard let self, !self.visibleSlider.isTracking else { return }
+                self.visibleSlider.setValue(session.outputVolume, animated: true)
+            }
+        }
+    }
+
+    @objc private func volumeChanged() {
+        systemVolumeView.layoutIfNeeded()
+        guard let systemSlider = findSlider(in: systemVolumeView) else { return }
+        systemSlider.setValue(visibleSlider.value, animated: false)
+        systemSlider.sendActions(for: .valueChanged)
+    }
+
+    private func findSlider(in view: UIView) -> UISlider? {
+        if let slider = view as? UISlider { return slider }
+        return view.subviews.lazy.compactMap(findSlider(in:)).first
     }
 }
 
