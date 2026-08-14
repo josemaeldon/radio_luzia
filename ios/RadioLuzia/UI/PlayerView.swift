@@ -39,7 +39,7 @@ struct PlayerView: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Link(destination: URL(string: "https://instagram.com/santaluziapgm")!) {
-                        Image(systemName: "camera.circle")
+                        InstagramMark()
                     }
                     .accessibilityLabel("Instagram da rádio")
                     if player.nowPlaying?.station.requestsEnabled == true {
@@ -278,6 +278,32 @@ struct PlayerView: View {
         guard interval.isFinite else { return "0:00" }
         let seconds = max(Int(interval), 0)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct InstagramMark: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.97, green: 0.18, blue: 0.42), Color(red: 0.58, green: 0.12, blue: 0.65), Color(red: 0.98, green: 0.62, blue: 0.14)],
+                        startPoint: .bottomLeading,
+                        endPoint: .topTrailing
+                    )
+                )
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(.white, lineWidth: 1.7)
+                .padding(4)
+            Circle()
+                .stroke(.white, lineWidth: 1.7)
+                .frame(width: 9, height: 9)
+            Circle()
+                .fill(.white)
+                .frame(width: 2.8, height: 2.8)
+                .offset(x: 6, y: -6)
+        }
+        .frame(width: 24, height: 24)
     }
 }
 
