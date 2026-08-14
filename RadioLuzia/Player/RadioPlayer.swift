@@ -45,8 +45,7 @@ final class RadioPlayer {
     var selectedMount: Mount? {
         guard let mounts = nowPlaying?.station.mounts else { return nil }
         return mounts.first(where: { $0.id == selectedMountID })
-            ?? mounts.first(where: \.isDefault)
-            ?? mounts.first
+            ?? nowPlaying?.station.preferredMount
     }
 
     init() {
@@ -72,30 +71,18 @@ final class RadioPlayer {
     func play() {
         wantsPlayback = true
         guard nowPlaying?.isOnline != false else {
+            wantsPlayback = false
             errorMessage = "A rádio está fora do ar neste momento."
             return
         }
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            errorMessage = "Não foi possível ativar o áudio."
-        }
-
-        let url = selectedMount?.url ?? nowPlaying?.station.listenURL
-            ?? URL(string: "https://webradio.cloudbr.app/listen/santaluziapgm/192")!
-        if activeStreamURL != url || player.currentItem == nil {
-            activeStreamURL = url
-            let item = AVPlayerItem(url: url)
-            item.preferredForwardBufferDuration = 4
-            player.replaceCurrentItem(with: item)
-        }
-        state = .connecting
-        player.play()
-        updateNowPlayingCenter()
+        interruptionResumeTask?.cancel()
+        _ = activateAndPlay()
     }
 
     func pause() {
         wantsPlayback = false
+        shouldResumeAfterInterruption = false
+        interruptionResumeTask?.cancel()
         player.pause()
         state = .paused
         updateNowPlayingCenter()
@@ -142,11 +129,11 @@ final class RadioPlayer {
         let songChanged = currentTrack?.song.id != model.nowPlaying.song.id
         nowPlaying = model
         lastMetadataUpdate = Date()
-        if selectedMountID == nil {
+        if selectedMountID == nil || !model.station.mounts.contains(where: { $0.id == selectedMountID }) {
             let saved = UserDefaults.standard.integer(forKey: "selectedMountID")
             selectedMountID = model.station.mounts.contains(where: { $0.id == saved })
                 ? saved
-                : model.station.mounts.first(where: \.isDefault)?.id
+                : model.station.preferredMount?.id
         }
         if songChanged { currentArtworkSongID = nil }
         updateNowPlayingCenter()
@@ -160,6 +147,40 @@ final class RadioPlayer {
         }
         player.automaticallyWaitsToMinimizeStalling = true
         player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+    }
+
+    /// Activates the session and starts the existing item when possible. Keeping
+    /// this in one place is important: CarPlay and the remote controls call the
+    /// same path as the button in the app.
+    @discardableResult
+    private func activateAndPlay(recreateItemIfNeeded: Bool = false) -> Bool {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            state = .failed("Não foi possível ativar o áudio.")
+            errorMessage = "Não foi possível ativar o áudio."
+            updateNowPlayingCenter()
+            return false
+        }
+
+        guard let url = selectedMount?.url ?? nowPlaying?.station.listenURL else {
+            state = .failed("A qualidade do áudio ainda não está disponível.")
+            errorMessage = "Aguarde a rádio carregar para iniciar a reprodução."
+            updateNowPlayingCenter()
+            return false
+        }
+        let itemNeedsRecreation = player.currentItem?.status == .failed
+        if recreateItemIfNeeded || activeStreamURL != url || player.currentItem == nil || itemNeedsRecreation {
+            activeStreamURL = url
+            let item = AVPlayerItem(url: url)
+            item.preferredForwardBufferDuration = 4
+            player.replaceCurrentItem(with: item)
+        }
+
+        state = .connecting
+        player.play()
+        updateNowPlayingCenter()
+        return true
     }
 
     private func configurePlayerObservation() {
@@ -215,6 +236,29 @@ final class RadioPlayer {
                 self?.handleInterruption(type: rawType)
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.wantsPlayback else { return }
+                self.configureAudioSession()
+                self.scheduleSystemResume(recreateItem: true)
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.wantsPlayback else { return }
+                self.scheduleSystemResume()
+            }
+        }
     }
 
     private func handleInterruption(type rawType: UInt) {
@@ -231,36 +275,28 @@ final class RadioPlayer {
         case .ended:
             guard shouldResumeAfterInterruption else { return }
             shouldResumeAfterInterruption = false
-
-            // The session may still be unavailable briefly after the
-            // interruption ends. Retry activation instead of requiring a
-            // quality change to create a new AVPlayerItem.
-            interruptionResumeTask?.cancel()
-            interruptionResumeTask = Task { @MainActor [weak self] in
-                guard let self else { return }
-                for attempt in 0..<8 {
-                    guard !Task.isCancelled, self.wantsPlayback else { return }
-                    do {
-                        try AVAudioSession.sharedInstance().setActive(true)
-                        self.state = .connecting
-                        self.player.play()
-                        self.updateNowPlayingCenter()
-                        return
-                    } catch {
-                        if attempt == 7 {
-                            self.state = .failed("Não foi possível retomar o áudio.")
-                            return
-                        }
-                        try? await Task.sleep(for: .milliseconds(400))
-                    }
-                }
-            }
+            scheduleSystemResume()
         @unknown default: break
         }
     }
 
+    private func scheduleSystemResume(recreateItem: Bool = false) {
+        interruptionResumeTask?.cancel()
+        interruptionResumeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for attempt in 0..<8 {
+                guard !Task.isCancelled, self.wantsPlayback else { return }
+                if self.activateAndPlay(recreateItemIfNeeded: recreateItem) { return }
+                if attempt < 7 { try? await Task.sleep(for: .milliseconds(400)) }
+            }
+            guard self.wantsPlayback else { return }
+            self.state = .failed("Não foi possível retomar o áudio.")
+            self.updateNowPlayingCenter()
+        }
+    }
+
     private func scheduleReconnect() {
-        guard state != .paused, state != .idle else { return }
+        guard wantsPlayback, state != .paused, state != .idle else { return }
         interruptionResumeTask?.cancel()
         interruptionResumeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -268,7 +304,7 @@ final class RadioPlayer {
             self.state = .connecting
             self.activeStreamURL = nil
             self.player.replaceCurrentItem(with: nil)
-            self.play()
+            _ = self.activateAndPlay()
         }
     }
 

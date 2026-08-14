@@ -29,6 +29,14 @@ struct Station: Codable, Sendable {
     let requestsEnabled: Bool
     let mounts: [Mount]
 
+    /// Use the stream selected by AzuraCast, falling back to the highest
+    /// bitrate only when the server does not mark a default mount.
+    var preferredMount: Mount? {
+        mounts.first(where: \.isDefault)
+            ?? mounts.first(where: { $0.url == listenURL })
+            ?? mounts.max { lhs, rhs in lhs.bitrate < rhs.bitrate }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, name, shortcode, description, timezone, mounts
         case listenURL = "listen_url"
