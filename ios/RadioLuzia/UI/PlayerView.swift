@@ -38,6 +38,10 @@ struct PlayerView: View {
                     .accessibilityLabel("Detalhes da rádio")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Link(destination: URL(string: "https://instagram.com/santaluziapgm")!) {
+                        Image(systemName: "camera.circle")
+                    }
+                    .accessibilityLabel("Instagram da rádio")
                     if player.nowPlaying?.station.requestsEnabled == true {
                         Button { showRequests = true } label: { Image(systemName: "music.note.list") }
                             .accessibilityLabel("Pedir música")
