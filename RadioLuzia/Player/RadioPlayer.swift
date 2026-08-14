@@ -35,6 +35,7 @@ final class RadioPlayer {
     private var interruptionObservation: NSObjectProtocol?
     private var activeStreamURL: URL?
     private var started = false
+    private var wantsPlayback = false
     private var shouldResumeAfterInterruption = false
     private var interruptionResumeTask: Task<Void, Never>?
     private var currentArtworkSongID: String?
@@ -69,6 +70,7 @@ final class RadioPlayer {
     }
 
     func play() {
+        wantsPlayback = true
         guard nowPlaying?.isOnline != false else {
             errorMessage = "A rádio está fora do ar neste momento."
             return
@@ -93,6 +95,7 @@ final class RadioPlayer {
     }
 
     func pause() {
+        wantsPlayback = false
         player.pause()
         state = .paused
         updateNowPlayingCenter()
@@ -218,24 +221,38 @@ final class RadioPlayer {
         guard let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
         switch type {
         case .began:
-            shouldResumeAfterInterruption = isPlaying
-            pause()
+            // AVPlayer can change to `.paused` before this notification is
+            // delivered. Keep the user's playback intent separately so a
+            // temporary interruption does not look like a manual pause.
+            shouldResumeAfterInterruption = wantsPlayback
+            player.pause()
+            state = .paused
+            updateNowPlayingCenter()
         case .ended:
             guard shouldResumeAfterInterruption else { return }
             shouldResumeAfterInterruption = false
 
-            // Some audio apps finish without setting `.shouldResume`. The
-            // radio was playing before the interruption, so reactivate the
-            // session and resume it explicitly in either case.
+            // The session may still be unavailable briefly after the
+            // interruption ends. Retry activation instead of requiring a
+            // quality change to create a new AVPlayerItem.
             interruptionResumeTask?.cancel()
             interruptionResumeTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(250))
-                guard !Task.isCancelled, let self else { return }
-                do {
-                    try AVAudioSession.sharedInstance().setActive(true)
-                    self.play()
-                } catch {
-                    self.state = .failed("Não foi possível retomar o áudio.")
+                guard let self else { return }
+                for attempt in 0..<8 {
+                    guard !Task.isCancelled, self.wantsPlayback else { return }
+                    do {
+                        try AVAudioSession.sharedInstance().setActive(true)
+                        self.state = .connecting
+                        self.player.play()
+                        self.updateNowPlayingCenter()
+                        return
+                    } catch {
+                        if attempt == 7 {
+                            self.state = .failed("Não foi possível retomar o áudio.")
+                            return
+                        }
+                        try? await Task.sleep(for: .milliseconds(400))
+                    }
                 }
             }
         @unknown default: break
