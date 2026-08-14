@@ -176,7 +176,13 @@ final class RadioPlayer {
 
     private func configureAudioSession() {
         do {
+#if targetEnvironment(simulator)
+            // The simulator does not expose a real AirPlay route and may log
+            // SessionCore badParam (-50) when this option is requested.
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+#else
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
+#endif
         } catch {
             state = .failed("Não foi possível preparar o áudio.")
         }
