@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: 6.0
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: DHLAYBVJ2Z
 targets:
   RadioLuzia:
     type: application
@@ -20,6 +20,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     scheme:
       testTargets:
         - RadioLuziaTests
@@ -30,4 +33,3 @@ targets:
       - path: RadioLuziaTests
     dependencies:
       - target: RadioLuzia
-

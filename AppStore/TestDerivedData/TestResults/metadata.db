@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>FormatVersion</key>
+	<integer>1</integer>
+	<key>Store</key>
+	<dict>
+		<key>RadioLuziaTests</key>
+		<dict>
+			<key>NowPlayingTests</key>
+			<dict>
+				<key>testCustomFieldsAcceptsAzuraCastArrayShape</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.001605987548828125</real>
+				</dict>
+				<key>testDecodesRepresentativeAzuraCastPayload</key>
+				<dict>
+					<key>mrnet</key>
+					<real>0.0052480697631835938</real>
+				</dict>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

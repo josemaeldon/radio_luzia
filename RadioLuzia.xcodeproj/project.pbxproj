@@ -22,6 +22,7 @@
 		A1000000000000000000000D /* Resources/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* Resources/Assets.xcassets */; };
 		A1000000000000000000000E /* NowPlayingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* NowPlayingTests.swift */; };
 		A1000000000000000000000F /* RadioLuzia.app in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* RadioLuzia.app */; settings = {ATTRIBUTES = (Test, ); }; };
+		A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		B1000000000000000000000E /* RadioLuzia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RadioLuzia.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B1000000000000000000000F /* NowPlayingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* RadioLuziaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RadioLuziaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000011 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +92,7 @@
 				F10000000000000000000006 /* Player */,
 				F10000000000000000000007 /* UI */,
 				B1000000000000000000000D /* Resources/Assets.xcassets */,
+				B10000000000000000000011 /* PrivacyInfo.xcprivacy */,
 			);
 			path = RadioLuzia;
 			sourceTree = "<group>";
@@ -240,6 +243,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000000000000000000000D /* Resources/Assets.xcassets in Resources */,
+				A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,6 +332,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = br.com.cloudbrapp.radioluzia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				TARGETED_DEVICE_FAMILY = "1,2";
