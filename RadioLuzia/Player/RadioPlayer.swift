@@ -281,11 +281,13 @@ final class RadioPlayer {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.song.displayTitle,
             MPMediaItemPropertyArtist: track.song.displayArtist,
-            MPNowPlayingInfoPropertyIsLiveStream: true,
             MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1 : 0,
             MPMediaItemPropertyPlaybackDuration: track.duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed()
         ]
+        if nowPlaying?.live.isLive == true {
+            info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        }
         if !track.song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = track.song.album }
         if let existing = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] {
             info[MPMediaItemPropertyArtwork] = existing
