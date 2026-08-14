@@ -1,0 +1,33 @@
+name: RadioLuzia
+options:
+  bundleIdPrefix: br.com.cloudbrapp
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    DEVELOPMENT_TEAM: ""
+targets:
+  RadioLuzia:
+    type: application
+    platform: iOS
+    sources:
+      - path: RadioLuzia
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: br.com.cloudbrapp.radioluzia
+        INFOPLIST_FILE: RadioLuzia/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+    scheme:
+      testTargets:
+        - RadioLuziaTests
+  RadioLuziaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: RadioLuziaTests
+    dependencies:
+      - target: RadioLuzia
+
