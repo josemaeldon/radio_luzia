@@ -3,8 +3,6 @@ package br.com.cloudbrapp.radioluzia
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.media.AudioAttributes
-import android.media.MediaPlayer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,7 +98,7 @@ class RadioViewModel : ViewModel() {
     var state by mutableStateOf(RadioState()); private set
     var requests by mutableStateOf<List<RequestSong>>(emptyList()); private set
     var requestsLoading by mutableStateOf(false); private set
-    private var player: MediaPlayer? = null
+    private var player: ExoPlayer? = null
     private var userWantsPlayback = false
     init { refresh(); viewModelScope.launch { while (true) { delay(15000); refresh() } } }
     fun refresh() = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.nowPlaying() }.onSuccess { json -> state = parseState(json, state) }.onFailure { if (state.station == null) state = state.copy(error = "Não foi possível atualizar os dados da rádio.") } }
@@ -108,12 +110,23 @@ class RadioViewModel : ViewModel() {
         userWantsPlayback = true; state = state.copy(connecting = true)
         if (player?.isPlaying == true) return
         player?.release()
-        player = MediaPlayer().apply {
-            setAudioAttributes(AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).setUsage(AudioAttributes.USAGE_MEDIA).build())
-            setDataSource(mount.url)
-            setOnPreparedListener { it.start(); state = state.copy(isPlaying = true, connecting = false) }
-            setOnErrorListener { _, _, _ -> state = state.copy(isPlaying = false, connecting = false, error = "A transmissão foi interrompida."); true }
-            prepareAsync()
+        player = ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(mount.url))
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> state = state.copy(connecting = true, isPlaying = false)
+                        Player.STATE_READY -> state = state.copy(isPlaying = true, connecting = false)
+                        Player.STATE_IDLE -> if (userWantsPlayback) state = state.copy(connecting = true)
+                    }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    state = state.copy(isPlaying = false, connecting = false, error = "A transmissão foi interrompida.")
+                }
+            })
+            playWhenReady = true
+            prepare()
         }
     }
     fun pause() { userWantsPlayback = false; player?.pause(); state = state.copy(isPlaying = false, connecting = false) }
