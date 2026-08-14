@@ -31,10 +31,12 @@ final class RadioPlayer {
     private let player = AVPlayer()
     private var statusObservation: NSKeyValueObservation?
     private var itemObservation: NSObjectProtocol?
+    private var stalledObservation: NSObjectProtocol?
     private var interruptionObservation: NSObjectProtocol?
     private var activeStreamURL: URL?
     private var started = false
     private var shouldResumeAfterInterruption = false
+    private var interruptionResumeTask: Task<Void, Never>?
     private var currentArtworkSongID: String?
 
     var currentTrack: PlayingTrack? { nowPlaying?.nowPlaying }
@@ -180,7 +182,23 @@ final class RadioPlayer {
         ) { [weak self] note in
             let message = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
                 ?? "A transmissão foi interrompida."
-            Task { @MainActor [weak self] in self?.state = .failed(message) }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let wasPlaying = self.isPlaying
+                self.state = .failed(message)
+                if wasPlaying { self.scheduleReconnect() }
+            }
+        }
+
+        stalledObservation = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isPlaying else { return }
+                self.scheduleReconnect()
+            }
         }
 
         interruptionObservation = NotificationCenter.default.addObserver(
@@ -189,24 +207,51 @@ final class RadioPlayer {
             queue: .main
         ) { [weak self] note in
             let rawType = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             Task { @MainActor [weak self] in
                 guard let rawType else { return }
-                self?.handleInterruption(type: rawType, options: rawOptions)
+                self?.handleInterruption(type: rawType)
             }
         }
     }
 
-    private func handleInterruption(type rawType: UInt, options rawOptions: UInt) {
+    private func handleInterruption(type rawType: UInt) {
         guard let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
         switch type {
         case .began:
             shouldResumeAfterInterruption = isPlaying
             pause()
         case .ended:
-            if shouldResumeAfterInterruption,
-               AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume) { play() }
+            guard shouldResumeAfterInterruption else { return }
+            shouldResumeAfterInterruption = false
+
+            // Some audio apps finish without setting `.shouldResume`. The
+            // radio was playing before the interruption, so reactivate the
+            // session and resume it explicitly in either case.
+            interruptionResumeTask?.cancel()
+            interruptionResumeTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, let self else { return }
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true)
+                    self.play()
+                } catch {
+                    self.state = .failed("Não foi possível retomar o áudio.")
+                }
+            }
         @unknown default: break
+        }
+    }
+
+    private func scheduleReconnect() {
+        guard state != .paused, state != .idle else { return }
+        interruptionResumeTask?.cancel()
+        interruptionResumeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled, let self, self.state != .paused, self.state != .idle else { return }
+            self.state = .connecting
+            self.activeStreamURL = nil
+            self.player.replaceCurrentItem(with: nil)
+            self.play()
         }
     }
 
