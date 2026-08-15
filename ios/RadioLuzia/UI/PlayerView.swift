@@ -311,13 +311,11 @@ private struct InstagramMark: View {
 private struct WhatsAppMark: View {
     var body: some View {
         ZStack {
-            Circle()
-                .fill(RadioTheme.gold)
-            Image(systemName: "message.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(RadioTheme.plum)
-            Image(systemName: "phone.fill")
-                .font(.system(size: 10, weight: .bold))
+            Image(systemName: "message")
+                .font(.system(size: 21, weight: .medium))
+                .foregroundStyle(RadioTheme.gold)
+            Image(systemName: "phone")
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(RadioTheme.gold)
                 .rotationEffect(.degrees(-35))
         }

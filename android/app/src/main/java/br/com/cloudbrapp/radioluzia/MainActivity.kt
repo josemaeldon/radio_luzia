@@ -1,5 +1,6 @@
 package br.com.cloudbrapp.radioluzia
 
+import android.media.AudioManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -76,18 +77,21 @@ class PodcastPlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_PLAY) {
-            val url = intent.getStringExtra(EXTRA_URL)
-            val title = intent.getStringExtra(EXTRA_TITLE) ?: "Podcast"
-            if (!url.isNullOrEmpty()) {
-                val metadata = androidx.media3.common.MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist("Rádio Santa Luzia • Podcasts")
-                    .build()
-                player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
-                player.prepare()
-                player.play()
+        when (intent?.action) {
+            ACTION_PLAY -> {
+                val url = intent.getStringExtra(EXTRA_URL)
+                val title = intent.getStringExtra(EXTRA_TITLE) ?: "Podcast"
+                if (!url.isNullOrEmpty()) {
+                    val metadata = androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(title)
+                        .setArtist("Rádio Santa Luzia • Podcasts")
+                        .build()
+                    player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
+                    player.prepare()
+                    player.play()
+                }
             }
+            ACTION_TOGGLE -> if (player.isPlaying) player.pause() else player.play()
         }
         return START_STICKY
     }
@@ -102,6 +106,7 @@ class PodcastPlaybackService : MediaSessionService() {
 
     companion object {
         const val ACTION_PLAY = "br.com.cloudbrapp.radioluzia.PLAY_PODCAST"
+        const val ACTION_TOGGLE = "br.com.cloudbrapp.radioluzia.TOGGLE_PODCAST"
         const val EXTRA_URL = "podcast_url"
         const val EXTRA_TITLE = "podcast_title"
     }
@@ -158,6 +163,8 @@ class RadioViewModel : ViewModel() {
     var requestsLoading by mutableStateOf(false); private set
     var podcasts by mutableStateOf<List<Podcast>>(emptyList()); private set
     var episodes by mutableStateOf<List<PodcastEpisode>>(emptyList()); private set
+    var podcastPlayingId by mutableStateOf<String?>(null); private set
+    var podcastPlaying by mutableStateOf(false); private set
     var podcastsLoading by mutableStateOf(false); private set
     private var player: ExoPlayer? = null
     private var userWantsPlayback = false
@@ -196,11 +203,18 @@ class RadioViewModel : ViewModel() {
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
     fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
     fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.text("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
-    fun playPodcast(context: Context, episode: PodcastEpisode) {
+    fun togglePodcast(context: Context, episode: PodcastEpisode) {
         val url = episode.download ?: return
+        if (podcastPlayingId == episode.id) {
+            context.startService(Intent(context, PodcastPlaybackService::class.java).apply { action = PodcastPlaybackService.ACTION_TOGGLE })
+            podcastPlaying = !podcastPlaying
+            return
+        }
         userWantsPlayback = false
         player?.release()
         player = null
+        podcastPlayingId = episode.id
+        podcastPlaying = true
         context.startService(Intent(context, PodcastPlaybackService::class.java).apply {
             action = PodcastPlaybackService.ACTION_PLAY
             putExtra(PodcastPlaybackService.EXTRA_URL, url)
@@ -234,13 +248,112 @@ class RadioViewModel : ViewModel() {
     when (dialog) { "details" -> DetailsDialog(state) { dialog = null }; "quality" -> QualityDialog(state, vm, context) { dialog = null }; "requests" -> RequestsDialog(vm) { dialog = null }; "podcasts" -> PodcastsDialog(vm, context) { dialog = null } }
 }
 
-@Composable private fun Header(state: RadioState, onDetails: () -> Unit, onRequests: () -> Unit, onPodcasts: () -> Unit, onQuality: () -> Unit, onInstagram: () -> Unit, onWhatsApp: () -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onDetails) { Icon(Icons.Default.Info, "Detalhes", tint = Color.White) }; Spacer(Modifier.weight(1f)); IconButton(onClick = onInstagram, modifier = Modifier.semantics { contentDescription = "Instagram da rádio" }) { InstagramMark() }; IconButton(onClick = onWhatsApp, modifier = Modifier.semantics { contentDescription = "Grupo da rádio no WhatsApp" }) { WhatsAppMark() }; if (state.station?.requestsEnabled == true) IconButton(onClick = onRequests) { Icon(Icons.Default.QueueMusic, "Pedir música", tint = Color.White) }; IconButton(onClick = onPodcasts) { Icon(Icons.Default.Mic, "Podcasts", tint = Color.White) }; IconButton(onClick = onQuality) { Icon(Icons.Default.Tune, "Qualidade", tint = Color.White) }; }; Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Text(state.station?.name?.uppercase() ?: "PARÓQUIA SANTA LUZIA", color = Cream.copy(.84f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp); Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(7.dp).clip(CircleShape).background(if (state.online) Color.Green else Color(0xFFFF9800))); Spacer(Modifier.width(7.dp)); Text(if (state.live) "Ao vivo com ${state.streamer.ifEmpty { "programa ao vivo" }}" else if (state.online) "No ar agora" else "Verificando sinal…", color = Color.White.copy(.64f), fontSize = 12.sp) } } }
+@Composable
+private fun Header(state: RadioState, onDetails: () -> Unit, onRequests: () -> Unit, onPodcasts: () -> Unit, onQuality: () -> Unit, onInstagram: () -> Unit, onWhatsApp: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        HeaderAction("Detalhes da rádio", onDetails) { Icon(Icons.Default.Info, null, tint = Color.White) }
+        Spacer(Modifier.weight(1f))
+        HeaderAction("Instagram da rádio", onInstagram) { InstagramMark() }
+        HeaderAction("Grupo da rádio no WhatsApp", onWhatsApp) { WhatsAppMark() }
+        if (state.station?.requestsEnabled == true) HeaderAction("Pedir música", onRequests) { Icon(Icons.Default.QueueMusic, null, tint = Color.White) }
+        HeaderAction("Podcasts", onPodcasts) { Icon(Icons.Default.Mic, null, tint = Color.White) }
+        HeaderAction("Qualidade da transmissão", onQuality) { Icon(Icons.Default.Tune, null, tint = Color.White) }
+    }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(state.station?.name?.uppercase() ?: "PARÓQUIA SANTA LUZIA", color = Cream.copy(.84f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(if (state.online) Color.Green else Color(0xFFFF9800)))
+            Spacer(Modifier.width(7.dp))
+            Text(if (state.live) "Ao vivo com ${state.streamer.ifEmpty { "programa ao vivo" }}" else if (state.online) "No ar agora" else "Verificando sinal…", color = Color.White.copy(.64f), fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun HeaderAction(label: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
 
 @Composable private fun InstagramMark() { Box(Modifier.size(24.dp).border(1.8.dp, Color.White, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) { Box(Modifier.size(9.dp).border(1.8.dp, Color.White, CircleShape)); Box(Modifier.size(3.dp).clip(CircleShape).background(Color.White).align(Alignment.TopEnd).offset((-4).dp, 5.dp)) } }
 
-@Composable private fun WhatsAppMark() { Box(Modifier.size(24.dp).clip(CircleShape).background(Gold), contentAlignment = Alignment.Center) { Icon(Icons.Default.Chat, null, tint = Plum, modifier = Modifier.size(20.dp)); Icon(Icons.Default.Call, null, tint = Gold, modifier = Modifier.size(10.dp).rotate(-35f)) } }
+@Composable private fun WhatsAppMark() { Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(24.dp).border(1.8.dp, Color.White, RoundedCornerShape(7.dp))); Icon(Icons.Default.Call, null, tint = Color.White, modifier = Modifier.size(10.dp).rotate(-35f)) } }
 
-@Composable private fun Controls(state: RadioState, vm: RadioViewModel, context: Context) { Column(Modifier.card(), horizontalAlignment = Alignment.CenterHorizontally) { LinearProgressIndicator(progress = { if ((state.current?.duration ?: 0.0) > 0) ((state.current?.elapsed ?: 0.0) / state.current!!.duration).toFloat() else 0f }, color = Gold, trackColor = Color.White.copy(.12f), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(18.dp)); Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) { IconButton(onClick = { }) { Icon(Icons.Default.VolumeDown, "Volume", tint = Color.White.copy(.58f)) }; FilledIconButton(onClick = { vm.toggle(context) }, modifier = Modifier.size(78.dp), colors = IconButtonDefaults.filledIconButtonColors(containerColor = Gold)) { if (state.connecting) CircularProgressIndicator(color = Plum) else Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Ouvir rádio", tint = Plum, modifier = Modifier.size(36.dp)) }; IconButton(onClick = { vm.share(context) }) { Icon(Icons.Default.Share, "Compartilhar", tint = Color.White.copy(.8f)) } }; Spacer(Modifier.height(12.dp)); Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.GraphicEq, null, tint = Color.White.copy(.62f), modifier = Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(if (state.connecting) "Conectando ao vivo…" else if (state.isPlaying) "Transmitindo ao vivo" else "Pronta para ouvir", color = Color.White.copy(.62f), fontSize = 12.sp); state.selectedMount?.let { Text(" • ${it.bitrate} kbps", color = Color.White.copy(.62f), fontSize = 12.sp) } } } }
+@Composable
+private fun Controls(state: RadioState, vm: RadioViewModel, context: Context) {
+    val track = state.current
+    var elapsed by remember(track?.id, track?.elapsed) { mutableDoubleStateOf(track?.elapsed ?: 0.0) }
+    val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    var volume by remember { mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume) }
+
+    LaunchedEffect(track?.id, track?.elapsed, state.isPlaying) {
+        elapsed = track?.elapsed ?: 0.0
+        while (true) {
+            delay(1000)
+            if (state.isPlaying && track != null) {
+                elapsed = (elapsed + 1.0).coerceAtMost(track.duration)
+            }
+        }
+    }
+
+    val duration = track?.duration ?: 0.0
+    val remaining = (duration - elapsed).coerceAtLeast(0.0)
+    Column(Modifier.card(), horizontalAlignment = Alignment.CenterHorizontally) {
+        LinearProgressIndicator(
+            progress = { if (duration > 0) (elapsed / duration).toFloat().coerceIn(0f, 1f) else 0f },
+            color = Gold,
+            trackColor = Color.White.copy(.12f),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatDuration(elapsed), color = Color.White.copy(.56f), fontSize = 12.sp)
+            Text("-${formatDuration(remaining)}", color = Color.White.copy(.56f), fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            FilledIconButton(
+                onClick = { vm.toggle(context) },
+                modifier = Modifier.size(78.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Gold)
+            ) {
+                if (state.connecting) CircularProgressIndicator(color = Plum)
+                else Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Ouvir rádio", tint = Plum, modifier = Modifier.size(36.dp))
+            }
+            IconButton(onClick = { vm.share(context) }) { Icon(Icons.Default.Share, "Compartilhar", tint = Color.White.copy(.8f)) }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.VolumeDown, "Diminuir volume", tint = Color.White.copy(.62f), modifier = Modifier.size(18.dp))
+            Slider(
+                value = volume,
+                onValueChange = {
+                    volume = it
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, (it * maxVolume).toInt(), 0)
+                },
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold, inactiveTrackColor = Color.White.copy(.16f))
+            )
+            Icon(Icons.Default.VolumeUp, "Aumentar volume", tint = Color.White.copy(.62f), modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.GraphicEq, null, tint = Color.White.copy(.62f), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (state.connecting) "Conectando ao vivo…" else if (state.isPlaying) "Transmitindo ao vivo" else "Pronta para ouvir", color = Color.White.copy(.62f), fontSize = 12.sp)
+            state.selectedMount?.let { Text(" • ${it.bitrate} kbps", color = Color.White.copy(.62f), fontSize = 12.sp) }
+        }
+    }
+}
+
+private fun formatDuration(seconds: Double): String {
+    val total = seconds.toInt().coerceAtLeast(0)
+    return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
+}
 
 @Composable private fun TrackCard(label: String, track: Track, icon: androidx.compose.ui.graphics.vector.ImageVector) { Column(Modifier.card()) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = Gold, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text(label, color = Gold, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, fontSize = 12.sp) }; TrackLine(track) } }
 @Composable private fun TrackLine(track: Track) { Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { RemoteArtwork(track.art, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp))); Spacer(Modifier.width(12.dp)); Column { Text(track.title, color = Color.White, maxLines = 1); Text(track.artist, color = Color.White.copy(.62f), fontSize = 12.sp, maxLines = 1) } } }
@@ -316,10 +429,14 @@ private fun PodcastsDialog(vm: RadioViewModel, context: Context, close: () -> Un
                         }
                     }
                 } else {
-                    items(vm.episodes) { episode ->
+                        items(vm.episodes) { episode ->
+                        val isPlaying = vm.podcastPlayingId == episode.id && vm.podcastPlaying
                         ListItem(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { vm.togglePodcast(context, episode) },
                             headlineContent = { Text(episode.title) },
-                            leadingContent = { IconButton(onClick = { vm.playPodcast(context, episode) }) { Icon(Icons.Default.PlayCircle, "Reproduzir") } }
+                            leadingContent = { Icon(if (isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle, if (isPlaying) "Pausar" else "Reproduzir") }
                         )
                     }
                 }

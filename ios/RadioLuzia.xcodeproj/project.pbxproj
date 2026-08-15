@@ -23,6 +23,7 @@
 		A1000000000000000000000E /* NowPlayingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000F /* NowPlayingTests.swift */; };
 		A1000000000000000000000F /* RadioLuzia.app in Frameworks */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* RadioLuzia.app */; settings = {ATTRIBUTES = (Test, ); }; };
 		A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* PrivacyInfo.xcprivacy */; };
+		A10000000000000000000012 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* LaunchScreen.storyboard */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +54,7 @@
 		B1000000000000000000000F /* NowPlayingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* RadioLuziaTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RadioLuziaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000011 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B10000000000000000000012 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Resources/LaunchScreen.storyboard; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +95,7 @@
 				F10000000000000000000007 /* UI */,
 				B1000000000000000000000D /* Resources/Assets.xcassets */,
 				B10000000000000000000011 /* PrivacyInfo.xcprivacy */,
+				B10000000000000000000012 /* LaunchScreen.storyboard */,
 			);
 			path = RadioLuzia;
 			sourceTree = "<group>";
@@ -244,6 +247,7 @@
 			files = (
 				A1000000000000000000000D /* Resources/Assets.xcassets in Resources */,
 				A10000000000000000000010 /* PrivacyInfo.xcprivacy in Resources */,
+				A10000000000000000000012 /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

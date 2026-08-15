@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23727" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
+    <device id="retina6_12" orientation="portrait" appearance="dark"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23721"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="LaunchScene">
+            <objects>
+                <viewController id="LaunchViewController" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="LaunchView" userLabel="Launch View">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" image="LaunchArtwork" translatesAutoresizingMaskIntoConstraints="NO" id="LaunchArtworkView">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+                        </subviews>
+                        <color key="backgroundColor" red="0.035" green="0.008" blue="0.031" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="LaunchArtworkView" firstAttribute="top" secondItem="LaunchView" secondAttribute="top" id="LaunchTop"/>
+                            <constraint firstItem="LaunchArtworkView" firstAttribute="bottom" secondItem="LaunchView" secondAttribute="bottom" id="LaunchBottom"/>
+                            <constraint firstItem="LaunchArtworkView" firstAttribute="leading" secondItem="LaunchView" secondAttribute="leading" id="LaunchLeading"/>
+                            <constraint firstItem="LaunchArtworkView" firstAttribute="trailing" secondItem="LaunchView" secondAttribute="trailing" id="LaunchTrailing"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="FirstResponder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="0.0" y="0.0"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="LaunchArtwork" width="1024" height="1536"/>
+    </resources>
+</document>
