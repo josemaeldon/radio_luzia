@@ -11,7 +11,7 @@ final class RadioPlayer {
 
         var label: String {
             switch self {
-            case .idle: "Pronta para ouvir"
+            case .idle: "Pronto para ouvir"
             case .connecting: "Conectando ao vivo…"
             case .playing: "Transmitindo ao vivo"
             case .paused: "Transmissão pausada"
@@ -187,7 +187,10 @@ final class RadioPlayer {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
 #endif
         } catch {
-            state = .failed("Não foi possível preparar o áudio.")
+            // A sessão de áudio pode não aceitar a configuração durante a
+            // inicialização (especialmente no simulador). Isso não significa
+            // que a rádio falhou: a sessão só precisa estar ativa quando o
+            // usuário tocar em reproduzir.
         }
         player.automaticallyWaitsToMinimizeStalling = true
         player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
