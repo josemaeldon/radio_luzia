@@ -206,28 +206,41 @@ struct PodcastsView: View {
         center.skipBackwardCommand.isEnabled = true
         center.skipForwardCommand.preferredIntervals = [15]
         center.skipBackwardCommand.preferredIntervals = [15]
-        center.playCommand.addTarget { [weak self] _ in self?.avPlayer?.play(); self?.isPlaying = true; self?.updateNowPlaying(); return .success }
-        center.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
+        center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.avPlayer?.play()
+                self?.isPlaying = true
+                self?.updateNowPlaying()
+            }
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pause() }
+            return .success
+        }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+            }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let self, let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            avPlayer?.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600))
-            elapsed = event.positionTime
-            updateNowPlaying()
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                avPlayer?.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600))
+                elapsed = event.positionTime
+                updateNowPlaying()
+            }
             return .success
         }
         center.skipForwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            seek(by: 15)
+            Task { @MainActor [weak self] in self?.seek(by: 15) }
             return .success
         }
         center.skipBackwardCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            seek(by: -15)
+            Task { @MainActor [weak self] in self?.seek(by: -15) }
             return .success
         }
     }
@@ -255,7 +268,6 @@ struct PodcastsView: View {
         if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
         if let artwork = currentArtwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
         loadArtworkIfNeeded()
     }
 
