@@ -172,7 +172,7 @@ struct PodcastsView: View {
 
     private func addProgressObserver() {
         if let timeObserver { avPlayer?.removeTimeObserver(timeObserver) }
-        timeObserver = avPlayer?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
+        timeObserver = avPlayer?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: nil) { [weak self] time in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 elapsed = time.seconds.isFinite ? time.seconds : 0
@@ -189,7 +189,7 @@ struct PodcastsView: View {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: avPlayer?.currentItem,
-            queue: .main
+            queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.isPlaying = false
