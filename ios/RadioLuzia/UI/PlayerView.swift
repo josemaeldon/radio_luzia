@@ -289,14 +289,14 @@ private struct InstagramMark: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7)
-                .stroke(.white, lineWidth: 1.8)
+                .stroke(RadioTheme.gold, lineWidth: 1.8)
             RoundedRectangle(cornerRadius: 5)
                 .stroke(.clear, lineWidth: 0)
             Circle()
-                .stroke(.white, lineWidth: 1.8)
+                .stroke(RadioTheme.gold, lineWidth: 1.8)
                 .frame(width: 9, height: 9)
             Circle()
-                .fill(.white)
+                .fill(RadioTheme.gold)
                 .frame(width: 3, height: 3)
                 .offset(x: 6, y: -6)
         }
