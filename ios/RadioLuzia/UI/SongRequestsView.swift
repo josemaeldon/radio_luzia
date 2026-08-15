@@ -148,7 +148,9 @@ struct PodcastsView: View {
         avPlayer?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
         addProgressObserver()
         observeItem()
+        #if !targetEnvironment(simulator)
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         avPlayer?.play()
         isPlaying = true
         updateNowPlaying()
