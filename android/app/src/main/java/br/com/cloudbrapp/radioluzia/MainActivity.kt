@@ -59,8 +59,8 @@ data class Mount(val id: Int, val name: String, val url: String, val bitrate: In
 data class Station(val name: String, val description: String, val timezone: String, val listenUrl: String, val publicUrl: String?, val requestsEnabled: Boolean, val mounts: List<Mount>)
 data class RadioState(val station: Station? = null, val current: Track? = null, val next: Track? = null, val history: List<Track> = emptyList(), val listeners: Int = 0, val online: Boolean = false, val live: Boolean = false, val streamer: String = "", val isPlaying: Boolean = false, val connecting: Boolean = false, val selectedMount: Mount? = null, val error: String? = null)
 data class RequestSong(val requestId: String, val title: String, val artist: String, val album: String, val art: String?)
-data class Podcast(val id: Int, val title: String, val art: String?)
-data class PodcastEpisode(val id: Int, val title: String, val download: String?)
+data class Podcast(val id: String, val title: String, val art: String?)
+data class PodcastEpisode(val id: String, val title: String, val download: String?)
 
 private object RadioApi {
     private const val base = "https://webradio.cloudbr.app"
@@ -80,7 +80,7 @@ private object RadioApi {
         inputStream.bufferedReader().use { JSONObject(it.readText()).optString("message", "Pedido enviado para a programação.") }
     }
     fun podcasts(): JSONArray = getArray("/api/station/2/public/podcasts")
-    fun episodes(id: Int): JSONArray = getArray("/api/station/2/public/podcast/$id/episodes")
+    fun episodes(id: String): JSONArray = getArray("/api/station/2/public/podcast/$id/episodes")
     private fun getArray(path: String): JSONArray = (URL(base + path).openConnection() as HttpURLConnection).run {
         connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
         if (responseCode !in 200..299) error("Resposta inválida")
@@ -149,8 +149,8 @@ class RadioViewModel : ViewModel() {
     fun selectMount(mount: Mount, context: Context) { val wasPlaying = state.isPlaying || state.connecting; pause(); state = state.copy(selectedMount = mount); if (wasPlaying) play(context) }
     fun loadRequests() = viewModelScope.launch(Dispatchers.IO) { requestsLoading = true; runCatching { RadioApi.requests() }.onSuccess { array -> requests = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { item -> val song = item.optJSONObject("song") ?: JSONObject(); add(RequestSong(item.text("request_id"), song.text("title").ifEmpty { song.text("text") }, song.text("artist"), song.text("album"), song.optString("art").takeIf { it.startsWith("http") })) } } }; requestsLoading = false }
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
-    fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.optInt("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
-    fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.optInt("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
+    fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
+    fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.text("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
     fun playPodcast(context: Context, episode: PodcastEpisode) { val url = episode.download ?: return; userWantsPlayback = false; player?.release(); player = ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(url)); playWhenReady = true; prepare() } }
     fun share(context: Context) { val url = state.station?.publicUrl ?: state.station?.listenUrl ?: return; context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Ouça Rádio Santa Luzia: $url") }, "Compartilhar rádio")) }
     fun openInstagram(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/santaluziapgm"))) }

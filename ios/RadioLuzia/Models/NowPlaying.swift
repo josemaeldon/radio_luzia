@@ -162,7 +162,7 @@ struct RequestableSong: Codable, Identifiable, Sendable {
 }
 
 struct Podcast: Codable, Identifiable, Sendable {
-    let id: Int
+    let id: String
     let title: String
     let descriptionShort: String?
     let art: URL?
@@ -173,7 +173,7 @@ struct Podcast: Codable, Identifiable, Sendable {
 struct PodcastLinks: Codable, Sendable { let `publicFeed`: URL?; enum CodingKeys: String, CodingKey { case `publicFeed` = "public_feed" } }
 
 struct PodcastEpisode: Codable, Identifiable, Sendable {
-    let id: Int
+    let id: String
     let title: String
     let descriptionShort: String?
     let art: URL?

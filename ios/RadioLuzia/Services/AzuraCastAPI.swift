@@ -43,7 +43,7 @@ actor AzuraCastAPI {
         try await get(path: "/api/station/\(stationID)/public/podcasts")
     }
 
-    func podcastEpisodes(_ podcastID: Int, stationID: Int = 2) async throws -> [PodcastEpisode] {
+    func podcastEpisodes(_ podcastID: String, stationID: Int = 2) async throws -> [PodcastEpisode] {
         try await get(path: "/api/station/\(stationID)/public/podcast/\(podcastID)/episodes")
     }
 
