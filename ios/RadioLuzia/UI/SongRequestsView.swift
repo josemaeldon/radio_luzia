@@ -117,6 +117,7 @@ struct PodcastsView: View {
 }
 
 @Observable private final class PodcastAudioPlayer {
+    private static let nowPlayingAlbum = "Rádio Santa Luzia • Podcasts"
     private var avPlayer: AVPlayer?
     private var timeObserver: Any?
     var url: URL?
@@ -193,7 +194,7 @@ struct PodcastsView: View {
         guard url != nil else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
-            MPMediaItemPropertyAlbumTitle: "Rádio Santa Luzia • Podcasts",
+            MPMediaItemPropertyAlbumTitle: Self.nowPlayingAlbum,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0

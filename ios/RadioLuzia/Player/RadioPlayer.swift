@@ -73,6 +73,9 @@ final class RadioPlayer {
     }
 
     func play() {
+        // A manual radio play switches the system Now Playing item away from
+        // a paused podcast, if one was left in the media session.
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         wantsPlayback = true
         guard nowPlaying?.isOnline != false else {
             wantsPlayback = false
@@ -382,20 +385,24 @@ final class RadioPlayer {
         center.nextTrackCommand.isEnabled = false
         center.previousTrackCommand.isEnabled = false
         center.playCommand.addTarget { [weak self] _ in
+            guard !Self.isPodcastNowPlaying else { return .commandFailed }
             Task { @MainActor in self?.play() }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
+            guard !Self.isPodcastNowPlaying else { return .commandFailed }
             Task { @MainActor in self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard !Self.isPodcastNowPlaying else { return .commandFailed }
             Task { @MainActor in self?.togglePlayback() }
             return .success
         }
     }
 
     private func updateNowPlayingCenter() {
+        guard !Self.isPodcastNowPlaying else { return }
         guard let track = currentTrack else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.song.displayTitle,
@@ -428,5 +435,10 @@ final class RadioPlayer {
             updated[MPMediaItemPropertyArtwork] = artwork
             MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
         }
+    }
+
+    private static var isPodcastNowPlaying: Bool {
+        (MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyAlbumTitle] as? String)
+            == "Rádio Santa Luzia • Podcasts"
     }
 }
