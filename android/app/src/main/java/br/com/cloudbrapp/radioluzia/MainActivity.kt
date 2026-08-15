@@ -40,6 +40,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -61,6 +63,48 @@ data class RadioState(val station: Station? = null, val current: Track? = null, 
 data class RequestSong(val requestId: String, val title: String, val artist: String, val album: String, val art: String?)
 data class Podcast(val id: String, val title: String, val art: String?)
 data class PodcastEpisode(val id: String, val title: String, val download: String?)
+
+class PodcastPlaybackService : MediaSessionService() {
+    private lateinit var player: ExoPlayer
+    private lateinit var session: MediaSession
+
+    override fun onCreate() {
+        super.onCreate()
+        player = ExoPlayer.Builder(this).build()
+        session = MediaSession.Builder(this, player).build()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_PLAY) {
+            val url = intent.getStringExtra(EXTRA_URL)
+            val title = intent.getStringExtra(EXTRA_TITLE) ?: "Podcast"
+            if (!url.isNullOrEmpty()) {
+                val metadata = androidx.media3.common.MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist("Rádio Santa Luzia • Podcasts")
+                    .build()
+                player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
+                player.prepare()
+                player.play()
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
+
+    override fun onDestroy() {
+        session.release()
+        player.release()
+        super.onDestroy()
+    }
+
+    companion object {
+        const val ACTION_PLAY = "br.com.cloudbrapp.radioluzia.PLAY_PODCAST"
+        const val EXTRA_URL = "podcast_url"
+        const val EXTRA_TITLE = "podcast_title"
+    }
+}
 
 private object RadioApi {
     private const val base = "https://webradio.cloudbr.app"
@@ -151,7 +195,17 @@ class RadioViewModel : ViewModel() {
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
     fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
     fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.text("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
-    fun playPodcast(context: Context, episode: PodcastEpisode) { val url = episode.download ?: return; userWantsPlayback = false; player?.release(); player = ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(url)); playWhenReady = true; prepare() } }
+    fun playPodcast(context: Context, episode: PodcastEpisode) {
+        val url = episode.download ?: return
+        userWantsPlayback = false
+        player?.release()
+        player = null
+        context.startService(Intent(context, PodcastPlaybackService::class.java).apply {
+            action = PodcastPlaybackService.ACTION_PLAY
+            putExtra(PodcastPlaybackService.EXTRA_URL, url)
+            putExtra(PodcastPlaybackService.EXTRA_TITLE, episode.title)
+        })
+    }
     fun share(context: Context) { val url = state.station?.publicUrl ?: state.station?.listenUrl ?: return; context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Ouça Rádio Santa Luzia: $url") }, "Compartilhar rádio")) }
     fun openInstagram(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/santaluziapgm"))) }
     override fun onCleared() { player?.release(); super.onCleared() }

@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import Observation
+import MediaPlayer
 
 struct SongRequestsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -86,6 +87,7 @@ struct SongRequestsView: View {
 
 struct PodcastsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(RadioPlayer.self) private var radioPlayer
     @State private var podcasts: [Podcast] = []
     @State private var selected: Podcast?
     @State private var episodes: [PodcastEpisode] = []
@@ -95,8 +97,13 @@ struct PodcastsView: View {
             Group {
                 if let selected {
                     List(episodes) { episode in
-                        Button { if let url = episode.links.download { player.play(url) } } label: {
-                            Label(episode.title, systemImage: player.url == episode.links.download ? "pause.circle.fill" : "play.circle")
+                        Button {
+                            if let url = episode.links.download {
+                                radioPlayer.pause()
+                                player.play(url, title: episode.title)
+                            }
+                        } label: {
+                            Label(episode.title, systemImage: player.url == episode.links.download && player.isPlaying ? "pause.circle.fill" : "play.circle")
                         }
                     }
                 } else if podcasts.isEmpty { ContentUnavailableView("Podcasts indisponíveis", systemImage: "mic.slash", description: Text("Nenhum podcast publicado no momento.")) }
@@ -111,6 +118,92 @@ struct PodcastsView: View {
 
 @Observable private final class PodcastAudioPlayer {
     private var avPlayer: AVPlayer?
+    private var timeObserver: Any?
     var url: URL?
-    func play(_ url: URL) { if self.url == url { avPlayer?.pause(); self.url = nil } else { self.url = url; avPlayer = AVPlayer(url: url); avPlayer?.play() } }
+    var title = "Podcast"
+    var isPlaying = false
+    var elapsed: TimeInterval = 0
+    var duration: TimeInterval = 0
+
+    init() {
+        configureAudioSession()
+        configureRemoteCommands()
+    }
+
+    func play(_ url: URL, title: String) {
+        if self.url == url {
+            if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+            return
+        }
+        self.url = url
+        self.title = title
+        avPlayer?.pause()
+        avPlayer = AVPlayer(url: url)
+        avPlayer?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+        addProgressObserver()
+        try? AVAudioSession.sharedInstance().setActive(true)
+        avPlayer?.play()
+        isPlaying = true
+        updateNowPlaying()
+    }
+
+    private func pause() {
+        avPlayer?.pause()
+        isPlaying = false
+        updateNowPlaying()
+    }
+
+    private func configureAudioSession() {
+        #if targetEnvironment(simulator)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        #else
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.allowAirPlay])
+        #endif
+    }
+
+    private func addProgressObserver() {
+        if let timeObserver { avPlayer?.removeTimeObserver(timeObserver) }
+        timeObserver = avPlayer?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
+            guard let self else { return }
+            elapsed = time.seconds.isFinite ? time.seconds : 0
+            duration = self.avPlayer?.currentItem?.duration.seconds.isFinite == true ? self.avPlayer?.currentItem?.duration.seconds ?? 0 : 0
+            updateNowPlaying()
+        }
+    }
+
+    private func configureRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in self?.avPlayer?.play(); self?.isPlaying = true; self?.updateNowPlaying(); return .success }
+        center.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self, let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            avPlayer?.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600))
+            elapsed = event.positionTime
+            updateNowPlaying()
+            return .success
+        }
+    }
+
+    private func updateNowPlaying() {
+        guard url != nil else { return }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyAlbumTitle: "Rádio Santa Luzia • Podcasts",
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
+        ]
+        if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+    }
+
+    deinit {
+        if let timeObserver { avPlayer?.removeTimeObserver(timeObserver) }
+    }
 }
