@@ -43,6 +43,10 @@ struct PlayerView: View {
                         InstagramMark()
                     }
                     .accessibilityLabel("Instagram da rádio")
+                    Link(destination: URL(string: "https://chat.whatsapp.com/C6FXTTNeetk4gMEX12uwNL?mode=gi_t")!) {
+                        WhatsAppMark()
+                    }
+                    .accessibilityLabel("Grupo da rádio no WhatsApp")
                     if player.nowPlaying?.station.requestsEnabled == true {
                         Button { showRequests = true } label: { Image(systemName: "music.note.list") }
                             .accessibilityLabel("Pedir música")
@@ -299,6 +303,23 @@ private struct InstagramMark: View {
                 .fill(RadioTheme.gold)
                 .frame(width: 3, height: 3)
                 .offset(x: 6, y: -6)
+        }
+        .frame(width: 24, height: 24)
+    }
+}
+
+private struct WhatsAppMark: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(RadioTheme.gold)
+            Image(systemName: "message.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(RadioTheme.plum)
+            Image(systemName: "phone.fill")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(RadioTheme.gold)
+                .rotationEffect(.degrees(-35))
         }
         .frame(width: 24, height: 24)
     }

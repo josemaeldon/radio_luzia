@@ -33,7 +33,7 @@
 		<key>UIImageName</key>
 		<string>LaunchArtwork</string>
 		<key>UIImageRespectsSafeAreaInsets</key>
-		<true/>
+		<false/>
 	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
