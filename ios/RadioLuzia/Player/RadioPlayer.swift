@@ -450,14 +450,10 @@ final class RadioPlayer {
     private static let defaultArtwork = UIImage(named: "DefaultStationArtwork") ?? UIImage()
 
     private static func mediaArtwork(for image: UIImage) -> MPMediaItemArtwork {
-        MPMediaItemArtwork(boundsSize: image.size) { requestedSize in
-            guard requestedSize.width > 0, requestedSize.height > 0 else { return image }
-            let format = UIGraphicsImageRendererFormat.default()
-            format.scale = image.scale
-            return UIGraphicsImageRenderer(size: requestedSize, format: format).image { _ in
-                image.draw(in: CGRect(origin: .zero, size: requestedSize))
-            }
-        }
+        // MediaPlayer can request artwork on its own queue. Returning the
+        // already decoded image avoids touching UIKit drawing APIs there,
+        // which can trigger a libdispatch queue assertion during launch.
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     private static var isPodcastNowPlaying: Bool {
