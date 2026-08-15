@@ -39,6 +39,14 @@ actor AzuraCastAPI {
         return payload?.message ?? "Pedido enviado para a programação."
     }
 
+    func podcasts(stationID: Int = 2) async throws -> [Podcast] {
+        try await get(path: "/api/station/\(stationID)/public/podcasts")
+    }
+
+    func podcastEpisodes(_ podcastID: Int, stationID: Int = 2) async throws -> [PodcastEpisode] {
+        try await get(path: "/api/station/\(stationID)/public/podcast/\(podcastID)/episodes")
+    }
+
     private func get<T: Decodable>(path: String) async throws -> T {
         var request = URLRequest(url: baseURL.appending(path: path))
         request.timeoutInterval = 15
@@ -55,4 +63,3 @@ actor AzuraCastAPI {
 private struct RequestResponse: Decodable {
     let message: String?
 }
-

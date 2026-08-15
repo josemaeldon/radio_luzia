@@ -59,6 +59,8 @@ data class Mount(val id: Int, val name: String, val url: String, val bitrate: In
 data class Station(val name: String, val description: String, val timezone: String, val listenUrl: String, val publicUrl: String?, val requestsEnabled: Boolean, val mounts: List<Mount>)
 data class RadioState(val station: Station? = null, val current: Track? = null, val next: Track? = null, val history: List<Track> = emptyList(), val listeners: Int = 0, val online: Boolean = false, val live: Boolean = false, val streamer: String = "", val isPlaying: Boolean = false, val connecting: Boolean = false, val selectedMount: Mount? = null, val error: String? = null)
 data class RequestSong(val requestId: String, val title: String, val artist: String, val album: String, val art: String?)
+data class Podcast(val id: Int, val title: String, val art: String?)
+data class PodcastEpisode(val id: Int, val title: String, val download: String?)
 
 private object RadioApi {
     private const val base = "https://webradio.cloudbr.app"
@@ -76,6 +78,13 @@ private object RadioApi {
         requestMethod = "POST"; setRequestProperty("Accept", "application/json"); doOutput = true
         if (responseCode !in 200..299) error("Não foi possível enviar o pedido agora.")
         inputStream.bufferedReader().use { JSONObject(it.readText()).optString("message", "Pedido enviado para a programação.") }
+    }
+    fun podcasts(): JSONArray = getArray("/api/station/2/public/podcasts")
+    fun episodes(id: Int): JSONArray = getArray("/api/station/2/public/podcast/$id/episodes")
+    private fun getArray(path: String): JSONArray = (URL(base + path).openConnection() as HttpURLConnection).run {
+        connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
+        if (responseCode !in 200..299) error("Resposta inválida")
+        inputStream.bufferedReader().use { JSONArray(it.readText()) }
     }
 }
 
@@ -102,6 +111,9 @@ class RadioViewModel : ViewModel() {
     var state by mutableStateOf(RadioState()); private set
     var requests by mutableStateOf<List<RequestSong>>(emptyList()); private set
     var requestsLoading by mutableStateOf(false); private set
+    var podcasts by mutableStateOf<List<Podcast>>(emptyList()); private set
+    var episodes by mutableStateOf<List<PodcastEpisode>>(emptyList()); private set
+    var podcastsLoading by mutableStateOf(false); private set
     private var player: ExoPlayer? = null
     private var userWantsPlayback = false
     init { refresh(); viewModelScope.launch { while (true) { delay(15000); refresh() } } }
@@ -137,6 +149,9 @@ class RadioViewModel : ViewModel() {
     fun selectMount(mount: Mount, context: Context) { val wasPlaying = state.isPlaying || state.connecting; pause(); state = state.copy(selectedMount = mount); if (wasPlaying) play(context) }
     fun loadRequests() = viewModelScope.launch(Dispatchers.IO) { requestsLoading = true; runCatching { RadioApi.requests() }.onSuccess { array -> requests = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { item -> val song = item.optJSONObject("song") ?: JSONObject(); add(RequestSong(item.text("request_id"), song.text("title").ifEmpty { song.text("text") }, song.text("artist"), song.text("album"), song.optString("art").takeIf { it.startsWith("http") })) } } }; requestsLoading = false }
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
+    fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.optInt("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
+    fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.optInt("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
+    fun playPodcast(context: Context, episode: PodcastEpisode) { val url = episode.download ?: return; userWantsPlayback = false; player?.release(); player = ExoPlayer.Builder(context).build().apply { setMediaItem(MediaItem.fromUri(url)); playWhenReady = true; prepare() } }
     fun share(context: Context) { val url = state.station?.publicUrl ?: state.station?.listenUrl ?: return; context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Ouça Rádio Santa Luzia: $url") }, "Compartilhar rádio")) }
     fun openInstagram(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/santaluziapgm"))) }
     override fun onCleared() { player?.release(); super.onCleared() }
@@ -152,7 +167,7 @@ class RadioViewModel : ViewModel() {
     val state = vm.state; val context = LocalContext.current; var dialog by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF150410), Plum, Color.Black)))) {
         LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            item { Header(state, onDetails = { dialog = "details" }, onRequests = { dialog = "requests" }, onQuality = { dialog = "quality" }, onInstagram = { vm.openInstagram(context) }) }
+            item { Header(state, onDetails = { dialog = "details" }, onRequests = { dialog = "requests" }, onPodcasts = { dialog = "podcasts" }, onQuality = { dialog = "quality" }, onInstagram = { vm.openInstagram(context) }) }
             item { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { RemoteArtwork(state.current?.art, Modifier.size(340.dp).clip(RoundedCornerShape(28.dp))); Spacer(Modifier.height(22.dp)); Text(state.current?.title ?: "Rádio Santa Luzia", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center); Text(state.current?.artist ?: "A luz que toca você", color = Color.White.copy(.68f), fontSize = 16.sp, textAlign = TextAlign.Center); if (!state.current?.album.isNullOrEmpty()) Text(state.current!!.album, color = Gold.copy(.8f), fontSize = 12.sp) } }
             item { Controls(state, vm, context) }
             state.next?.let { next -> item { TrackCard("A SEGUIR", next, Icons.Default.SkipNext) } }
@@ -160,10 +175,10 @@ class RadioViewModel : ViewModel() {
         }
     }
     state.error?.let { message -> AlertDialog(onDismissRequest = vm::clearError, confirmButton = { TextButton(onClick = vm::clearError) { Text("OK") } }, title = { Text("Rádio Santa Luzia") }, text = { Text(message) }) }
-    when (dialog) { "details" -> DetailsDialog(state) { dialog = null }; "quality" -> QualityDialog(state, vm, context) { dialog = null }; "requests" -> RequestsDialog(vm) { dialog = null } }
+    when (dialog) { "details" -> DetailsDialog(state) { dialog = null }; "quality" -> QualityDialog(state, vm, context) { dialog = null }; "requests" -> RequestsDialog(vm) { dialog = null }; "podcasts" -> PodcastsDialog(vm, context) { dialog = null } }
 }
 
-@Composable private fun Header(state: RadioState, onDetails: () -> Unit, onRequests: () -> Unit, onQuality: () -> Unit, onInstagram: () -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onDetails) { Icon(Icons.Default.Info, "Detalhes", tint = Color.White) }; Spacer(Modifier.weight(1f)); IconButton(onClick = onInstagram, modifier = Modifier.semantics { contentDescription = "Instagram da rádio" }) { InstagramMark() }; if (state.station?.requestsEnabled == true) IconButton(onClick = onRequests) { Icon(Icons.Default.QueueMusic, "Pedir música", tint = Color.White) }; IconButton(onClick = onQuality) { Icon(Icons.Default.Tune, "Qualidade", tint = Color.White) }; }; Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Text(state.station?.name?.uppercase() ?: "PARÓQUIA SANTA LUZIA", color = Cream.copy(.84f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp); Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(7.dp).clip(CircleShape).background(if (state.online) Color.Green else Color(0xFFFF9800))); Spacer(Modifier.width(7.dp)); Text(if (state.live) "Ao vivo com ${state.streamer.ifEmpty { "programa ao vivo" }}" else if (state.online) "No ar agora" else "Verificando sinal…", color = Color.White.copy(.64f), fontSize = 12.sp) } } }
+@Composable private fun Header(state: RadioState, onDetails: () -> Unit, onRequests: () -> Unit, onPodcasts: () -> Unit, onQuality: () -> Unit, onInstagram: () -> Unit) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onDetails) { Icon(Icons.Default.Info, "Detalhes", tint = Color.White) }; Spacer(Modifier.weight(1f)); IconButton(onClick = onInstagram, modifier = Modifier.semantics { contentDescription = "Instagram da rádio" }) { InstagramMark() }; if (state.station?.requestsEnabled == true) IconButton(onClick = onRequests) { Icon(Icons.Default.QueueMusic, "Pedir música", tint = Color.White) }; IconButton(onClick = onPodcasts) { Icon(Icons.Default.Mic, "Podcasts", tint = Color.White) }; IconButton(onClick = onQuality) { Icon(Icons.Default.Tune, "Qualidade", tint = Color.White) }; }; Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Text(state.station?.name?.uppercase() ?: "PARÓQUIA SANTA LUZIA", color = Cream.copy(.84f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp); Row(verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(7.dp).clip(CircleShape).background(if (state.online) Color.Green else Color(0xFFFF9800))); Spacer(Modifier.width(7.dp)); Text(if (state.live) "Ao vivo com ${state.streamer.ifEmpty { "programa ao vivo" }}" else if (state.online) "No ar agora" else "Verificando sinal…", color = Color.White.copy(.64f), fontSize = 12.sp) } } }
 
 @Composable private fun InstagramMark() { Box(Modifier.size(24.dp).clip(RoundedCornerShape(7.dp)).background(Brush.linearGradient(listOf(Color(0xFFFCAF45), Color(0xFFE1306C), Color(0xFF833AB4)))), contentAlignment = Alignment.Center) { Box(Modifier.size(16.dp).border(1.7.dp, Color.White, RoundedCornerShape(5.dp))); Box(Modifier.size(8.dp).border(1.7.dp, Color.White, CircleShape)); Box(Modifier.size(3.dp).clip(CircleShape).background(Color.White).align(Alignment.TopEnd).offset((-4).dp, 5.dp)) } }
 
@@ -176,6 +191,89 @@ private fun Modifier.card() = this.fillMaxWidth().background(Color.White.copy(.0
 @Composable private fun QualityDialog(state: RadioState, vm: RadioViewModel, context: Context, close: () -> Unit) { AlertDialog(onDismissRequest = close, title = { Text("Qualidade do áudio") }, text = { Column { state.station?.mounts?.forEach { mount -> Row(Modifier.fillMaxWidth().clickable { vm.selectMount(mount, context); close() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(mount.name); Text("${mount.format.uppercase()} • ${mount.bitrate} kbps", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; if (state.selectedMount?.id == mount.id) Icon(Icons.Default.CheckCircle, null, tint = Gold) } } } }, confirmButton = { TextButton(onClick = close) { Text("Fechar") } }) }
 @Composable private fun DetailsDialog(state: RadioState, close: () -> Unit) { AlertDialog(onDismissRequest = close, title = { Text("Sobre a transmissão") }, text = { Column { state.station?.let { Text("${it.name}\n${it.description}\nFuso: ${it.timezone}\nOuvintes agora: ${state.listeners}\nStatus: ${if (state.online) "No ar" else "Fora do ar"}", lineHeight = 22.sp) }; Spacer(Modifier.height(12.dp)); Text("Metadados instantâneos via WebSocket\nÁudio Icecast em segundo plano\nControles de reprodução no Android", lineHeight = 22.sp) } }, confirmButton = { TextButton(onClick = close) { Text("OK") } }) }
 
-@Composable private fun RequestsDialog(vm: RadioViewModel, close: () -> Unit) { var search by remember { mutableStateOf("") }; var message by remember { mutableStateOf<String?>(null) }; LaunchedEffect(Unit) { vm.loadRequests() }; AlertDialog(onDismissRequest = close, title = { Text("Peça sua música") }, text = { Column { OutlinedTextField(search, { search = it }, label = { Text("Música, artista ou álbum") }, singleLine = true); Spacer(Modifier.height(8.dp)); if (vm.requestsLoading) CircularProgressIndicator() else vm.requests.filter { search.isBlank() || listOf(it.title, it.artist, it.album).any { text -> text.contains(search, true) } }.take(8).forEach { song -> Row(Modifier.fillMaxWidth().clickable { vm.request(song) { message = it } }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { RemoteArtwork(song.art, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))); Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(song.title, maxLines = 1); Text(song.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }; Icon(Icons.Default.AddCircle, null, tint = Gold) } }; message?.let { Text(it, color = Gold, modifier = Modifier.padding(top = 8.dp)) } } }, confirmButton = { TextButton(onClick = close) { Text("Fechar") } }) }
+@Composable
+private fun RequestsDialog(vm: RadioViewModel, close: () -> Unit) {
+    var search by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var visible by remember { mutableStateOf(30) }
+    LaunchedEffect(Unit) { vm.loadRequests() }
+    val filtered = vm.requests.filter {
+        search.isBlank() || listOf(it.title, it.artist, it.album).any { text -> text.contains(search, true) }
+    }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text("Peça sua música") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 520.dp)) {
+                item {
+                    OutlinedTextField(search, { search = it }, label = { Text("Música, artista ou álbum") }, singleLine = true)
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (vm.requestsLoading) {
+                    item { CircularProgressIndicator() }
+                } else {
+                    items(filtered.take(visible)) { song ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { vm.request(song) { message = it } }.padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RemoteArtwork(song.art, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(song.title, maxLines = 1)
+                                Text(song.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            }
+                            Icon(Icons.Default.AddCircle, null, tint = Gold)
+                        }
+                        if (song == filtered.getOrNull(visible - 5)) visible += 30
+                    }
+                }
+                message?.let { item { Text(it, color = Gold, modifier = Modifier.padding(top = 8.dp)) } }
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text("Fechar") } }
+    )
+}
+
+@Composable
+private fun PodcastsDialog(vm: RadioViewModel, context: Context, close: () -> Unit) {
+    var selected by remember { mutableStateOf<Podcast?>(null) }
+    LaunchedEffect(Unit) { vm.loadPodcasts() }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(selected?.title ?: "Podcasts") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 520.dp)) {
+                if (selected == null) {
+                    if (vm.podcastsLoading) item { CircularProgressIndicator() }
+                    items(vm.podcasts) { podcast ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { selected = podcast; vm.loadEpisodes(podcast) }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RemoteArtwork(podcast.art, Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
+                            Spacer(Modifier.width(10.dp))
+                            Text(podcast.title, Modifier.weight(1f))
+                            Icon(Icons.Default.ChevronRight, null)
+                        }
+                    }
+                } else {
+                    items(vm.episodes) { episode ->
+                        ListItem(
+                            headlineContent = { Text(episode.title) },
+                            leadingContent = { IconButton(onClick = { vm.playPodcast(context, episode) }) { Icon(Icons.Default.PlayCircle, "Reproduzir") } }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text("Fechar") } },
+        dismissButton = {
+            if (selected != null) {
+                TextButton(onClick = { selected = null }) { Text("Podcasts") }
+            }
+        }
+    )
+}
 
 class MainActivity : ComponentActivity() { override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Gold, background = Color(0xFF150410), surface = Color(0xFF2D1025), onSurface = Color.White)) { RadioApp() } } } }

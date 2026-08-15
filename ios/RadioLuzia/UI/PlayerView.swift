@@ -6,6 +6,7 @@ struct PlayerView: View {
     @State private var showDetails = false
     @State private var showRequests = false
     @State private var showQuality = false
+    @State private var showPodcasts = false
 
     var body: some View {
         @Bindable var player = player
@@ -46,6 +47,8 @@ struct PlayerView: View {
                         Button { showRequests = true } label: { Image(systemName: "music.note.list") }
                             .accessibilityLabel("Pedir música")
                     }
+                    Button { showPodcasts = true } label: { Image(systemName: "mic.fill") }
+                        .accessibilityLabel("Podcasts")
                     Button { showQuality = true } label: { Image(systemName: "slider.horizontal.3") }
                         .accessibilityLabel("Qualidade da transmissão")
                 }
@@ -53,6 +56,7 @@ struct PlayerView: View {
             .sheet(isPresented: $showDetails) { StationDetailsView() }
             .sheet(isPresented: $showRequests) { SongRequestsView() }
             .sheet(isPresented: $showQuality) { QualityPickerView() }
+            .sheet(isPresented: $showPodcasts) { PodcastsView() }
             .alert("Rádio Santa Luzia", isPresented: Binding(
                 get: { player.errorMessage != nil },
                 set: { if !$0 { player.errorMessage = nil } }
@@ -287,9 +291,9 @@ private struct InstagramMark: View {
             RoundedRectangle(cornerRadius: 7)
                 .fill(
                     LinearGradient(
-                        colors: [Color(red: 0.97, green: 0.18, blue: 0.42), Color(red: 0.58, green: 0.12, blue: 0.65), Color(red: 0.98, green: 0.62, blue: 0.14)],
-                        startPoint: .bottomLeading,
-                        endPoint: .topTrailing
+                        colors: [Color(red: 0.98, green: 0.69, blue: 0.27), Color(red: 0.88, green: 0.19, blue: 0.42), Color(red: 0.51, green: 0.23, blue: 0.71)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
                     )
                 )
             RoundedRectangle(cornerRadius: 5)

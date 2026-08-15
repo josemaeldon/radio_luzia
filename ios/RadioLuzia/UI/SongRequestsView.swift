@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import Observation
 
 struct SongRequestsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -7,6 +9,7 @@ struct SongRequestsView: View {
     @State private var isLoading = true
     @State private var sendingID: String?
     @State private var alertMessage: String?
+    @State private var visibleCount = 30
 
     private var filteredSongs: [RequestableSong] {
         guard !searchText.isEmpty else { return songs }
@@ -25,7 +28,7 @@ struct SongRequestsView: View {
                 } else if songs.isEmpty {
                     ContentUnavailableView("Pedidos indisponíveis", systemImage: "music.note.slash", description: Text("Tente novamente mais tarde."))
                 } else {
-                    List(filteredSongs) { item in
+                    List(Array(filteredSongs.prefix(visibleCount))) { item in
                         Button { Task { await request(item) } } label: {
                             HStack(spacing: 12) {
                                 AsyncImage(url: item.song.art) { image in
@@ -45,6 +48,7 @@ struct SongRequestsView: View {
                             }
                         }
                         .disabled(sendingID != nil)
+                        .onAppear { if item.id == filteredSongs.dropFirst(max(visibleCount - 5, 0)).first?.id { visibleCount += 30 } }
                     }
                     .listStyle(.plain)
                 }
@@ -80,3 +84,33 @@ struct SongRequestsView: View {
     }
 }
 
+struct PodcastsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var podcasts: [Podcast] = []
+    @State private var selected: Podcast?
+    @State private var episodes: [PodcastEpisode] = []
+    @State private var player = PodcastAudioPlayer()
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let selected {
+                    List(episodes) { episode in
+                        Button { if let url = episode.links.download { player.play(url) } } label: {
+                            Label(episode.title, systemImage: player.url == episode.links.download ? "pause.circle.fill" : "play.circle")
+                        }
+                    }
+                } else if podcasts.isEmpty { ContentUnavailableView("Podcasts indisponíveis", systemImage: "mic.slash", description: Text("Nenhum podcast publicado no momento.")) }
+                else { List(podcasts) { podcast in Button { selected = podcast; Task { episodes = (try? await AzuraCastAPI.shared.podcastEpisodes(podcast.id)) ?? [] } } label: { Label(podcast.title, systemImage: "mic.fill") } } }
+            }
+            .navigationTitle(selected?.title ?? "Podcasts")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }; if selected != nil { ToolbarItem(placement: .topBarLeading) { Button("Podcasts") { selected = nil } } } }
+            .task { podcasts = (try? await AzuraCastAPI.shared.podcasts()) ?? [] }
+        }.preferredColorScheme(.dark)
+    }
+}
+
+@Observable private final class PodcastAudioPlayer {
+    private var avPlayer: AVPlayer?
+    var url: URL?
+    func play(_ url: URL) { if self.url == url { avPlayer?.pause(); self.url = nil } else { self.url = url; avPlayer = AVPlayer(url: url); avPlayer?.play() } }
+}

@@ -160,3 +160,25 @@ struct RequestableSong: Codable, Identifiable, Sendable {
         case song
     }
 }
+
+struct Podcast: Codable, Identifiable, Sendable {
+    let id: Int
+    let title: String
+    let descriptionShort: String?
+    let art: URL?
+    let links: PodcastLinks
+    enum CodingKeys: String, CodingKey { case id, title, art, links; case descriptionShort = "description_short" }
+}
+
+struct PodcastLinks: Codable, Sendable { let `publicFeed`: URL?; enum CodingKeys: String, CodingKey { case `publicFeed` = "public_feed" } }
+
+struct PodcastEpisode: Codable, Identifiable, Sendable {
+    let id: Int
+    let title: String
+    let descriptionShort: String?
+    let art: URL?
+    let links: PodcastEpisodeLinks
+    enum CodingKeys: String, CodingKey { case id, title, art, links; case descriptionShort = "description_short" }
+}
+
+struct PodcastEpisodeLinks: Codable, Sendable { let download: URL? }
