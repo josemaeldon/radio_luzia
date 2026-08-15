@@ -289,22 +289,15 @@ private struct InstagramMark: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.98, green: 0.69, blue: 0.27), Color(red: 0.88, green: 0.19, blue: 0.42), Color(red: 0.51, green: 0.23, blue: 0.71)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .stroke(.white, lineWidth: 1.8)
             RoundedRectangle(cornerRadius: 5)
-                .stroke(.white, lineWidth: 1.7)
-                .padding(4)
+                .stroke(.clear, lineWidth: 0)
             Circle()
-                .stroke(.white, lineWidth: 1.7)
+                .stroke(.white, lineWidth: 1.8)
                 .frame(width: 9, height: 9)
             Circle()
                 .fill(.white)
-                .frame(width: 2.8, height: 2.8)
+                .frame(width: 3, height: 3)
                 .offset(x: 6, y: -6)
         }
         .frame(width: 24, height: 24)
