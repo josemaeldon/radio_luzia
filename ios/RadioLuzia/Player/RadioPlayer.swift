@@ -39,7 +39,6 @@ final class RadioPlayer {
     private var shouldResumeAfterInterruption = false
     private var interruptionResumeTask: Task<Void, Never>?
     private var currentArtworkSongID: String?
-    private var artworkTask: Task<Void, Never>?
     private var pausedAt: Date?
     private let stalePauseThreshold: TimeInterval = 15
     private var lastAppliedPlayedAt: Int?
@@ -174,11 +173,7 @@ final class RadioPlayer {
                 ? saved
                 : model.station.preferredMount?.id
         }
-        if songChanged {
-            currentArtworkSongID = nil
-            artworkTask?.cancel()
-            artworkTask = nil
-        }
+        if songChanged { currentArtworkSongID = nil }
         updateNowPlayingCenter()
     }
 
@@ -409,15 +404,9 @@ final class RadioPlayer {
     private func updateNowPlayingCenter() {
         guard !Self.isPodcastNowPlaying else { return }
         guard let track = currentTrack else { return }
-        let stationArtwork = Self.mediaArtwork(for: Self.defaultArtwork)
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.song.displayTitle,
             MPMediaItemPropertyArtist: track.song.displayArtist,
-            // AzuraCast does not always provide artwork for a live stream.
-            // The app already has a station artwork fallback; publish it to
-            // Media Player as well so the lock screen never shows an empty
-            // artwork slot.
-            MPMediaItemPropertyArtwork: stationArtwork,
             MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1 : 0,
             MPMediaItemPropertyPlaybackDuration: track.duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed()
@@ -426,34 +415,26 @@ final class RadioPlayer {
             info[MPNowPlayingInfoPropertyIsLiveStream] = true
         }
         if !track.song.album.isEmpty { info[MPMediaItemPropertyAlbumTitle] = track.song.album }
+        if let existing = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] {
+            info[MPMediaItemPropertyArtwork] = existing
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
 
         guard let artURL = track.song.art, currentArtworkSongID != track.song.id else { return }
         currentArtworkSongID = track.song.id
         let expectedID = track.song.id
-        artworkTask?.cancel()
-        artworkTask = Task { @MainActor [weak self] in
+        Task {
             guard
                 let (data, _) = try? await URLSession.shared.data(from: artURL),
                 let image = UIImage(data: data),
-                !Task.isCancelled,
-                self?.currentTrack?.song.id == expectedID
+                currentTrack?.song.id == expectedID
             else { return }
-            let artwork = Self.mediaArtwork(for: image)
+            let requestHandler: @Sendable (CGSize) -> UIImage = { _ in image }
+            let artwork = MPMediaItemArtwork(boundsSize: image.size, requestHandler: requestHandler)
             var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-            guard self?.currentTrack?.song.id == expectedID else { return }
             updated[MPMediaItemPropertyArtwork] = artwork
             MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
         }
-    }
-
-    private static let defaultArtwork = UIImage(named: "DefaultStationArtwork") ?? UIImage()
-
-    private static func mediaArtwork(for image: UIImage) -> MPMediaItemArtwork {
-        // MediaPlayer can request artwork on its own queue. Returning the
-        // already decoded image avoids touching UIKit drawing APIs there,
-        // which can trigger a libdispatch queue assertion during launch.
-        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     private static var isPodcastNowPlaying: Bool {
