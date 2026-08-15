@@ -116,8 +116,7 @@ struct PodcastsView: View {
     }
 }
 
-@MainActor
-@Observable private final class PodcastAudioPlayer {
+@Observable private final class PodcastAudioPlayer: @unchecked Sendable {
     private static let nowPlayingAlbum = "Rádio Santa Luzia • Podcasts"
     private var avPlayer: AVPlayer?
     private var timeObserver: Any?
@@ -173,7 +172,7 @@ struct PodcastsView: View {
     private func addProgressObserver() {
         if let timeObserver { avPlayer?.removeTimeObserver(timeObserver) }
         timeObserver = avPlayer?.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: nil) { [weak self] time in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 elapsed = time.seconds.isFinite ? time.seconds : 0
                 duration = self.avPlayer?.currentItem?.duration.seconds.isFinite == true ? self.avPlayer?.currentItem?.duration.seconds ?? 0 : 0
@@ -184,14 +183,14 @@ struct PodcastsView: View {
 
     private func observeItem() {
         itemStatusObservation = avPlayer?.currentItem?.observe(\.status, options: [.initial, .new]) { [weak self] _, _ in
-            Task { @MainActor [weak self] in self?.updateNowPlaying() }
+            DispatchQueue.main.async { [weak self] in self?.updateNowPlaying() }
         }
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: avPlayer?.currentItem,
             queue: nil
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.isPlaying = false
                 self?.updateNowPlaying()
             }
@@ -209,7 +208,7 @@ struct PodcastsView: View {
         center.skipForwardCommand.preferredIntervals = [15]
         center.skipBackwardCommand.preferredIntervals = [15]
         center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.avPlayer?.play()
                 self?.isPlaying = true
                 self?.updateNowPlaying()
@@ -217,11 +216,11 @@ struct PodcastsView: View {
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.pause() }
+            DispatchQueue.main.async { [weak self] in self?.pause() }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
             }
@@ -229,20 +228,21 @@ struct PodcastsView: View {
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor [weak self] in
+            let position = event.positionTime
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                avPlayer?.seek(to: CMTime(seconds: event.positionTime, preferredTimescale: 600))
-                elapsed = event.positionTime
+                avPlayer?.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+                elapsed = position
                 updateNowPlaying()
             }
             return .success
         }
         center.skipForwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.seek(by: 15) }
+            DispatchQueue.main.async { [weak self] in self?.seek(by: 15) }
             return .success
         }
         center.skipBackwardCommand.addTarget { [weak self] _ in
-            Task { @MainActor [weak self] in self?.seek(by: -15) }
+            DispatchQueue.main.async { [weak self] in self?.seek(by: -15) }
             return .success
         }
     }
@@ -285,9 +285,11 @@ struct PodcastsView: View {
                   let self,
                   self.artworkURL == artworkURL else { return }
             let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-            var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-            updated[MPMediaItemPropertyArtwork] = artwork
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
+            DispatchQueue.main.async {
+                var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+                updated[MPMediaItemPropertyArtwork] = artwork
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
+            }
         }
     }
 
