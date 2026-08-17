@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,6 +9,26 @@ plugins {
 android {
     namespace = "br.com.cloudbrapp.radioluzia"
     compileSdk = 35
+
+    val signingProperties = rootProject.file("keystore.properties")
+    val loadedSigningProperties = if (signingProperties.exists()) {
+        Properties().apply {
+            signingProperties.inputStream().use(::load)
+        }
+    } else {
+        null
+    }
+
+    signingConfigs {
+        create("release") {
+            if (loadedSigningProperties != null) {
+                storeFile = rootProject.file(loadedSigningProperties.getProperty("storeFile"))
+                storePassword = loadedSigningProperties.getProperty("storePassword")
+                keyAlias = loadedSigningProperties.getProperty("keyAlias")
+                keyPassword = loadedSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,6 +44,12 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "1.0"
+    }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
     buildFeatures { compose = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
