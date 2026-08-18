@@ -1,8 +1,14 @@
 package br.com.cloudbrapp.radioluzia
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.media.AudioManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -10,9 +16,15 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.app.NotificationCompat
+import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -44,6 +56,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -59,6 +73,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.File
 import java.io.FileOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlin.math.min
 
 private val Plum = Color(0xFF3B102F)
@@ -77,15 +94,53 @@ data class PodcastEpisode(val id: String, val title: String, val download: Strin
 class PodcastPlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
+    private lateinit var notificationManager: NotificationManager
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var artworkBitmap: android.graphics.Bitmap? = null
 
     override fun onCreate() {
         super.onCreate()
-        player = ExoPlayer.Builder(this).build()
+        notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(NotificationChannel(NOTIFICATION_CHANNEL_ID, "Reprodução da rádio", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "Controles da Rádio Santa Luzia"
+            setShowBadge(false)
+        })
+        player = ExoPlayer.Builder(this)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                    .build(),
+                true
+            )
+            .build()
         session = MediaSession.Builder(this, player).build()
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) = updateNotification()
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateNotification()
+        })
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        ensureForegroundNotification()
         when (intent?.action) {
+            ACTION_PLAY_RADIO -> {
+                val url = intent.getStringExtra(EXTRA_URL)
+                if (!url.isNullOrEmpty()) {
+                    val metadata = MediaMetadata.Builder()
+                        .setTitle(intent.getStringExtra(EXTRA_TITLE) ?: "Rádio Santa Luzia")
+                        .setArtist(intent.getStringExtra(EXTRA_ARTIST) ?: "Rádio Santa Luzia")
+                        .setAlbumTitle(intent.getStringExtra(EXTRA_ALBUM))
+                        .setArtworkUri(intent.getStringExtra(EXTRA_ARTWORK)?.let(Uri::parse))
+                        .build()
+                    loadArtwork(intent.getStringExtra(EXTRA_ARTWORK))
+                    player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
+                    player.prepare()
+                    player.play()
+                }
+            }
+            ACTION_PAUSE_RADIO -> player.pause()
+            ACTION_TOGGLE_RADIO -> if (player.isPlaying) player.pause() else player.play()
             ACTION_PLAY -> {
                 val url = intent.getStringExtra(EXTRA_URL)
                 val title = intent.getStringExtra(EXTRA_TITLE) ?: "Podcast"
@@ -104,19 +159,80 @@ class PodcastPlaybackService : MediaSessionService() {
         return START_STICKY
     }
 
+    private fun ensureForegroundNotification() {
+        startForeground(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun updateNotification() {
+        if (::notificationManager.isInitialized) notificationManager.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun buildNotification(): android.app.Notification {
+        val metadata = player.mediaMetadata
+        val title = metadata.title?.toString()?.ifBlank { "Rádio Santa Luzia" } ?: "Rádio Santa Luzia"
+        val artist = metadata.artist?.toString()?.ifBlank { "Ao vivo" } ?: "Ao vivo"
+        val toggleIntent = PendingIntent.getService(this, 1002, Intent(this, PodcastPlaybackService::class.java).apply { action = ACTION_TOGGLE_RADIO }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val contentIntent = PendingIntent.getActivity(this, 1003, Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val toggleIcon = if (player.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.app_icon)
+            .setContentTitle(title)
+            .setContentText(artist)
+            .setSubText("Rádio Santa Luzia")
+            .setLargeIcon(artworkBitmap ?: BitmapFactory.decodeResource(resources, R.drawable.default_station_artwork))
+            .setContentIntent(contentIntent)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setShowWhen(false)
+            .addAction(NotificationCompat.Action(toggleIcon, if (player.isPlaying) "Pausar" else "Reproduzir", toggleIntent))
+            .setStyle(MediaStyle().setMediaSession(session.sessionCompatToken).setShowActionsInCompactView(0))
+            .build()
+    }
+
+    private fun loadArtwork(url: String?) {
+        serviceScope.launch(Dispatchers.IO) {
+            val loaded = runCatching { url?.takeIf { it.startsWith("http") }?.let { URL(it).openStream().use(BitmapFactory::decodeStream) } }.getOrNull()
+            withContext(Dispatchers.Main) {
+                artworkBitmap?.recycle()
+                artworkBitmap = loaded
+                updateNotification()
+            }
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        player.pause()
+        player.clearMediaItems()
+        stopForeground(true)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
 
     override fun onDestroy() {
+        serviceScope.cancel()
+        artworkBitmap?.recycle()
         session.release()
         player.release()
         super.onDestroy()
     }
 
     companion object {
+        private const val NOTIFICATION_CHANNEL_ID = "radio_playback"
+        private const val NOTIFICATION_ID = 1001
+        const val ACTION_PLAY_RADIO = "br.com.cloudbrapp.radioluzia.PLAY_RADIO"
+        const val ACTION_PAUSE_RADIO = "br.com.cloudbrapp.radioluzia.PAUSE_RADIO"
+        const val ACTION_TOGGLE_RADIO = "br.com.cloudbrapp.radioluzia.TOGGLE_RADIO"
         const val ACTION_PLAY = "br.com.cloudbrapp.radioluzia.PLAY_PODCAST"
         const val ACTION_TOGGLE = "br.com.cloudbrapp.radioluzia.TOGGLE_PODCAST"
         const val EXTRA_URL = "podcast_url"
         const val EXTRA_TITLE = "podcast_title"
+        const val EXTRA_ARTIST = "media_artist"
+        const val EXTRA_ALBUM = "media_album"
+        const val EXTRA_ARTWORK = "media_artwork"
     }
 }
 
@@ -174,39 +290,27 @@ class RadioViewModel : ViewModel() {
     var podcastPlayingId by mutableStateOf<String?>(null); private set
     var podcastPlaying by mutableStateOf(false); private set
     var podcastsLoading by mutableStateOf(false); private set
-    private var player: ExoPlayer? = null
     private var userWantsPlayback = false
     init { refresh(); viewModelScope.launch { while (true) { delay(15000); refresh() } } }
     fun refresh() = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.nowPlaying() }.onSuccess { json -> state = parseState(json, state) }.onFailure { if (state.station == null) state = state.copy(error = "Não foi possível atualizar os dados da rádio.") } }
     fun clearError() { state = state.copy(error = null) }
-    fun toggle(context: Context) { if (state.isPlaying || state.connecting) pause() else play(context) }
+    fun toggle(context: Context) { if (state.isPlaying || state.connecting) pause(context) else play(context) }
     fun play(context: Context) {
         val mount = state.selectedMount ?: state.station?.mounts?.firstOrNull() ?: return
         if (!state.online) { state = state.copy(error = "A rádio está fora do ar neste momento."); return }
-        userWantsPlayback = true; state = state.copy(connecting = true)
-        if (player?.isPlaying == true) return
-        player?.release()
-        player = ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(mount.url))
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    when (playbackState) {
-                        Player.STATE_BUFFERING -> state = state.copy(connecting = true, isPlaying = false)
-                        Player.STATE_READY -> state = state.copy(isPlaying = true, connecting = false)
-                        Player.STATE_IDLE -> if (userWantsPlayback) state = state.copy(connecting = true)
-                    }
-                }
-
-                override fun onPlayerError(error: PlaybackException) {
-                    state = state.copy(isPlaying = false, connecting = false, error = "A transmissão foi interrompida.")
-                }
-            })
-            playWhenReady = true
-            prepare()
-        }
+        userWantsPlayback = true
+        state = state.copy(isPlaying = true, connecting = false)
+        ContextCompat.startForegroundService(context, Intent(context, PodcastPlaybackService::class.java).apply {
+            action = PodcastPlaybackService.ACTION_PLAY_RADIO
+            putExtra(PodcastPlaybackService.EXTRA_URL, mount.url)
+            putExtra(PodcastPlaybackService.EXTRA_TITLE, state.current?.title ?: "Rádio Santa Luzia")
+            putExtra(PodcastPlaybackService.EXTRA_ARTIST, state.current?.artist ?: "Rádio Santa Luzia")
+            putExtra(PodcastPlaybackService.EXTRA_ALBUM, state.current?.album)
+            putExtra(PodcastPlaybackService.EXTRA_ARTWORK, state.current?.art)
+        })
     }
-    fun pause() { userWantsPlayback = false; player?.pause(); state = state.copy(isPlaying = false, connecting = false) }
-    fun selectMount(mount: Mount, context: Context) { val wasPlaying = state.isPlaying || state.connecting; pause(); state = state.copy(selectedMount = mount); if (wasPlaying) play(context) }
+    fun pause(context: Context) { userWantsPlayback = false; context.startService(Intent(context, PodcastPlaybackService::class.java).apply { action = PodcastPlaybackService.ACTION_PAUSE_RADIO }); state = state.copy(isPlaying = false, connecting = false) }
+    fun selectMount(mount: Mount, context: Context) { val wasPlaying = state.isPlaying || state.connecting; pause(context); state = state.copy(selectedMount = mount); if (wasPlaying) play(context) }
     fun loadRequests() = viewModelScope.launch(Dispatchers.IO) { requestsLoading = true; runCatching { RadioApi.requests() }.onSuccess { array -> requests = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { item -> val song = item.optJSONObject("song") ?: JSONObject(); add(RequestSong(item.text("request_id"), song.text("title").ifEmpty { song.text("text") }, song.text("artist"), song.text("album"), song.optString("art").takeIf { it.startsWith("http") })) } } }; requestsLoading = false }
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
     fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
@@ -219,11 +323,11 @@ class RadioViewModel : ViewModel() {
             return
         }
         userWantsPlayback = false
-        player?.release()
-        player = null
+        context.startService(Intent(context, PodcastPlaybackService::class.java).apply { action = PodcastPlaybackService.ACTION_PAUSE_RADIO })
+        state = state.copy(isPlaying = false, connecting = false)
         podcastPlayingId = episode.id
         podcastPlaying = true
-        context.startService(Intent(context, PodcastPlaybackService::class.java).apply {
+        ContextCompat.startForegroundService(context, Intent(context, PodcastPlaybackService::class.java).apply {
             action = PodcastPlaybackService.ACTION_PLAY
             putExtra(PodcastPlaybackService.EXTRA_URL, url)
             putExtra(PodcastPlaybackService.EXTRA_TITLE, episode.title)
@@ -253,7 +357,7 @@ class RadioViewModel : ViewModel() {
     }
     fun openInstagram(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/santaluziapgm"))) }
     fun openWhatsApp(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chat.whatsapp.com/C6FXTTNeetk4gMEX12uwNL?mode=gi_t"))) }
-    override fun onCleared() { player?.release(); super.onCleared() }
+    override fun onCleared() { super.onCleared() }
 }
 
 private const val APP_STORE_URL = "https://play.google.com/store/apps/details?id=org.santaluzia.radio"
@@ -377,6 +481,16 @@ private fun Controls(state: RadioState, vm: RadioViewModel, context: Context) {
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var volume by remember { mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume) }
+
+    DisposableEffect(audioManager) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                volume = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume).coerceIn(0f, 1f)
+            }
+        }
+        context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
+        onDispose { context.contentResolver.unregisterContentObserver(observer) }
+    }
 
     LaunchedEffect(track?.id, track?.elapsed, state.isPlaying) {
         elapsed = track?.elapsed ?: 0.0
@@ -539,4 +653,17 @@ private fun PodcastsDialog(vm: RadioViewModel, context: Context, close: () -> Un
     )
 }
 
-class MainActivity : ComponentActivity() { override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Gold, background = Color(0xFF150410), surface = Color(0xFF2D1025), onSurface = Color.White)) { RadioApp() } } } }
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Gold, background = Color(0xFF150410), surface = Color(0xFF2D1025), onSurface = Color.White)) { RadioApp() } }
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) stopService(Intent(this, PodcastPlaybackService::class.java))
+        super.onDestroy()
+    }
+}
