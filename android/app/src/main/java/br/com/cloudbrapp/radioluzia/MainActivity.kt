@@ -4,10 +4,15 @@ import android.media.AudioManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,6 +57,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.math.min
 
 private val Plum = Color(0xFF3B102F)
 private val Wine = Color(0xFF7B194E)
@@ -221,10 +229,84 @@ class RadioViewModel : ViewModel() {
             putExtra(PodcastPlaybackService.EXTRA_TITLE, episode.title)
         })
     }
-    fun share(context: Context) { val url = state.station?.publicUrl ?: state.station?.listenUrl ?: return; context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Ouça Rádio Santa Luzia: $url") }, "Compartilhar rádio")) }
+    fun share(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val track = state.current
+            val artwork = runCatching {
+                track?.art?.let { URL(it).openStream().use(BitmapFactory::decodeStream) }
+            }.getOrNull()
+            val shareBitmap = createShareArtwork(context, track, artwork)
+            val shareDir = File(context.cacheDir, "share").apply { mkdirs() }
+            val shareFile = File(shareDir, "radio-santa-luzia-${System.currentTimeMillis()}.png")
+            FileOutputStream(shareFile).use { shareBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            shareBitmap.recycle()
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareFile)
+            withContext(Dispatchers.Main) {
+                context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "image/png"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, "Baixe o app Rádio Santa Luzia: $APP_STORE_URL")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Compartilhar arte"))
+            }
+        }
+    }
     fun openInstagram(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://instagram.com/santaluziapgm"))) }
     fun openWhatsApp(context: Context) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chat.whatsapp.com/C6FXTTNeetk4gMEX12uwNL?mode=gi_t"))) }
     override fun onCleared() { player?.release(); super.onCleared() }
+}
+
+private const val APP_STORE_URL = "https://play.google.com/store/apps/details?id=org.santaluzia.radio"
+
+private fun createShareArtwork(context: Context, track: Track?, artwork: android.graphics.Bitmap?): android.graphics.Bitmap {
+    val width = 1080
+    val height = 1920
+    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val background = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = android.graphics.LinearGradient(0f, 0f, width.toFloat(), height.toFloat(), android.graphics.Color.rgb(21, 4, 16), android.graphics.Color.rgb(123, 25, 78), android.graphics.Shader.TileMode.CLAMP)
+    }
+    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), background)
+
+    val image = artwork ?: BitmapFactory.decodeResource(context.resources, R.drawable.default_station_artwork)
+    val imageRect = RectF(64f, 64f, 1016f, 1016f)
+    canvas.save()
+    canvas.clipPath(android.graphics.Path().apply { addRoundRect(imageRect, 32f, 32f, android.graphics.Path.Direction.CW) })
+    val scale = maxOf(imageRect.width() / image.width, imageRect.height() / image.height)
+    val imageWidth = image.width * scale
+    val imageHeight = image.height * scale
+    canvas.drawBitmap(image, null, RectF(imageRect.centerX() - imageWidth / 2f, imageRect.centerY() - imageHeight / 2f, imageRect.centerX() + imageWidth / 2f, imageRect.centerY() + imageHeight / 2f), Paint(Paint.ANTI_ALIAS_FLAG))
+    canvas.restore()
+
+    val gold = android.graphics.Color.rgb(233, 186, 98)
+    val white = android.graphics.Color.WHITE
+    val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gold; textSize = 24f; typeface = Typeface.DEFAULT_BOLD; letterSpacing = .12f }
+    canvas.drawText("RÁDIO SANTA LUZIA", 64f, 1100f, labelPaint)
+    val title = track?.title?.ifBlank { "Rádio Santa Luzia" } ?: "Rádio Santa Luzia"
+    val artist = track?.artist?.ifBlank { "A luz que toca você" } ?: "A luz que toca você"
+    val album = track?.album?.takeIf { it.isNotBlank() }
+    drawWrappedText(canvas, title, 64f, 1160f, 952f, 44f, white, Typeface.DEFAULT_BOLD, 2)
+    drawWrappedText(canvas, artist, 64f, 1280f, 952f, 30f, android.graphics.Color.argb(210, 255, 255, 255), Typeface.DEFAULT, 1)
+    album?.let { drawWrappedText(canvas, it, 64f, 1332f, 952f, 22f, android.graphics.Color.argb(175, 255, 255, 255), Typeface.DEFAULT, 1) }
+    val linkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = gold; textSize = 18f; typeface = Typeface.DEFAULT }
+    canvas.drawText(APP_STORE_URL, 64f, 1810f, linkPaint)
+    return bitmap
+}
+
+private fun drawWrappedText(canvas: Canvas, text: String, x: Float, baseline: Float, maxWidth: Float, textSize: Float, color: Int, typeface: Typeface, maxLines: Int) {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; this.textSize = textSize; this.typeface = typeface }
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    var line = ""
+    var lineNumber = 0
+    words.forEach { word ->
+        val candidate = if (line.isEmpty()) word else "$line $word"
+        if (paint.measureText(candidate) > maxWidth && line.isNotEmpty()) {
+            canvas.drawText(line, x, baseline + lineNumber * (textSize + 8f), paint)
+            lineNumber++
+            line = word
+        } else line = candidate
+    }
+    if (line.isNotEmpty() && lineNumber < maxLines) canvas.drawText(line, x, baseline + lineNumber * (textSize + 8f), paint)
 }
 
 @Composable private fun RemoteArtwork(url: String?, modifier: Modifier = Modifier) {
@@ -236,7 +318,11 @@ class RadioViewModel : ViewModel() {
 @Composable fun RadioApp(vm: RadioViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val state = vm.state; val context = LocalContext.current; var dialog by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF150410), Plum, Color.Black)))) {
-        LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        LazyColumn(
+            Modifier.statusBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
             item { Header(state, onDetails = { dialog = "details" }, onRequests = { dialog = "requests" }, onPodcasts = { dialog = "podcasts" }, onQuality = { dialog = "quality" }, onInstagram = { vm.openInstagram(context) }, onWhatsApp = { vm.openWhatsApp(context) }) }
             item { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { RemoteArtwork(state.current?.art, Modifier.size(340.dp).clip(RoundedCornerShape(28.dp))); Spacer(Modifier.height(22.dp)); Text(state.current?.title ?: "Rádio Santa Luzia", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center); Text(state.current?.artist ?: "A luz que toca você", color = Color.White.copy(.68f), fontSize = 16.sp, textAlign = TextAlign.Center); if (!state.current?.album.isNullOrEmpty()) Text(state.current!!.album, color = Gold.copy(.8f), fontSize = 12.sp) } }
             item { Controls(state, vm, context) }
@@ -316,16 +402,18 @@ private fun Controls(state: RadioState, vm: RadioViewModel, context: Context) {
             Text("-${formatDuration(remaining)}", color = Color.White.copy(.56f), fontSize = 12.sp)
         }
         Spacer(Modifier.height(18.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Box(Modifier.fillMaxWidth().height(78.dp)) {
             FilledIconButton(
                 onClick = { vm.toggle(context) },
-                modifier = Modifier.size(78.dp),
+                modifier = Modifier.size(78.dp).align(Alignment.Center),
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = Gold)
             ) {
                 if (state.connecting) CircularProgressIndicator(color = Plum)
                 else Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Ouvir rádio", tint = Plum, modifier = Modifier.size(36.dp))
             }
-            IconButton(onClick = { vm.share(context) }) { Icon(Icons.Default.Share, "Compartilhar", tint = Color.White.copy(.8f)) }
+            IconButton(onClick = { vm.share(context) }, modifier = Modifier.align(Alignment.CenterEnd)) {
+                Icon(Icons.Default.Share, "Compartilhar", tint = Color.White.copy(.8f))
+            }
         }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.VolumeDown, "Diminuir volume", tint = Color.White.copy(.62f), modifier = Modifier.size(18.dp))

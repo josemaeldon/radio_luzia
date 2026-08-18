@@ -22,10 +22,10 @@ android {
     signingConfigs {
         create("release") {
             if (loadedSigningProperties != null) {
-                storeFile = rootProject.file(loadedSigningProperties.getProperty("storeFile"))
-                storePassword = loadedSigningProperties.getProperty("storePassword")
-                keyAlias = loadedSigningProperties.getProperty("keyAlias")
-                keyPassword = loadedSigningProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(loadedSigningProperties.getProperty("MYAPP_UPLOAD_STORE_FILE"))
+                storePassword = loadedSigningProperties.getProperty("MYAPP_UPLOAD_STORE_PASSWORD")
+                keyAlias = loadedSigningProperties.getProperty("MYAPP_UPLOAD_KEY_ALIAS")
+                keyPassword = loadedSigningProperties.getProperty("MYAPP_UPLOAD_KEY_PASSWORD")
             }
         }
     }
@@ -39,11 +39,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "br.com.cloudbrapp.radioluzia"
+        applicationId = "org.santaluzia.radio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0"
+        versionCode = 8
+        versionName = "3.0"
     }
     buildTypes {
         release {
