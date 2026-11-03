@@ -98,9 +98,9 @@ struct PodcastsView: View {
                 if let selected {
                     List(episodes) { episode in
                         Button {
-                            if let url = episode.links.download {
+                            if episode.links.download != nil {
                                 radioPlayer.pause()
-                                player.play(url, title: episode.title, art: episode.art ?? selected.art)
+                                player.play(episodeID: episode.id, podcastID: selected.id, art: episode.art ?? selected.art)
                             }
                         } label: {
                             Label(episode.title, systemImage: player.url == episode.links.download && player.isPlaying ? "pause.circle.fill" : "play.circle")
@@ -111,7 +111,15 @@ struct PodcastsView: View {
             }
             .navigationTitle(selected?.title ?? "Podcasts")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }; if selected != nil { ToolbarItem(placement: .topBarLeading) { Button("Podcasts") { selected = nil } } } }
-            .task { podcasts = (try? await AzuraCastAPI.shared.podcasts()) ?? [] }
+            .task {
+                while !Task.isCancelled {
+                    podcasts = (try? await AzuraCastAPI.shared.podcasts()) ?? []
+                    if let selected {
+                        episodes = (try? await AzuraCastAPI.shared.podcastEpisodes(selected.id)) ?? []
+                    }
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                }
+            }
         }.preferredColorScheme(.dark)
     }
 }
@@ -122,6 +130,12 @@ struct PodcastsView: View {
     private var timeObserver: Any?
     private var itemStatusObservation: NSKeyValueObservation?
     private var endObserver: NSObjectProtocol?
+    private var primaryObserver: NSObjectProtocol?
+    private var episodeID: String?
+    private var podcastID: String?
+    private var publicationVersion = 0
+    private var validationTask: Task<Void, Never>?
+    private var publicationTask: Task<Void, Never>?
     var url: URL?
     var title = "Podcast"
     var artworkURL: URL?
@@ -132,17 +146,93 @@ struct PodcastsView: View {
     init() {
         configureAudioSession()
         configureRemoteCommands()
+        primaryObserver = NotificationCenter.default.addObserver(forName: .primaryPlaybackRequested, object: nil, queue: .main) { [weak self] _ in
+            if self?.episodeID != nil { self?.stopUnpublished() }
+        }
+        publicationTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled && self != nil {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                await self?.verifyPublication()
+            }
+        }
     }
 
-    func play(_ url: URL, title: String, art: URL?) {
-        if self.url == url {
-            if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+    deinit {
+        validationTask?.cancel()
+        publicationTask?.cancel()
+        if let primaryObserver { NotificationCenter.default.removeObserver(primaryObserver) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let timeObserver { avPlayer?.removeTimeObserver(timeObserver) }
+        avPlayer?.pause()
+    }
+
+    func play(episodeID: String, podcastID: String, art: URL?) {
+        if self.episodeID == episodeID && self.podcastID == podcastID && isPlaying { pause(); return }
+        self.episodeID = episodeID
+        self.podcastID = podcastID
+        self.artworkURL = art
+        resumePublished()
+    }
+
+    private func resumePublished() {
+        validationTask?.cancel()
+        publicationVersion += 1
+        let version = publicationVersion
+        validationTask = Task { @MainActor [weak self] in
+            guard let self, let id = episodeID, let podcast = podcastID else { return }
+            defer { if version == publicationVersion { validationTask = nil } }
+            do {
+                let episode = try await AzuraCastAPI.shared.publishedEpisode(id, podcastID: podcast)
+                guard !Task.isCancelled, id == episodeID, podcast == podcastID, version == publicationVersion else { return }
+                guard let url = episode.links.download else { stopUnpublished(); return }
+                startValidatedURL(url, title: episode.title, art: artworkURL)
+            } catch { if !Task.isCancelled { stopUnpublished() } }
+        }
+    }
+
+    private func verifyPublication() async {
+        guard let id = episodeID, let podcast = podcastID, validationTask?.isCancelled != false else { return }
+        let version = publicationVersion
+        do {
+            let episode = try await AzuraCastAPI.shared.publishedEpisode(id, podcastID: podcast)
+            guard version == publicationVersion, id == episodeID, podcast == podcastID else { return }
+            guard let publishedURL = episode.links.download else { stopUnpublished(); return }
+            if publishedURL != url {
+                if isPlaying { startValidatedURL(publishedURL, title: episode.title, art: artworkURL) }
+                else { avPlayer?.replaceCurrentItem(with: nil); url = publishedURL }
+            }
+            title = episode.title
+            updateNowPlaying()
+        } catch { if !Task.isCancelled && version == publicationVersion { stopUnpublished() } }
+    }
+
+    private func stopUnpublished() {
+        publicationVersion += 1
+        validationTask?.cancel()
+        validationTask = nil
+        avPlayer?.pause()
+        avPlayer?.replaceCurrentItem(with: nil)
+        isPlaying = false
+        url = nil
+        episodeID = nil
+        podcastID = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    private func startValidatedURL(_ url: URL, title: String, art: URL?) {
+        if self.url == url && avPlayer?.currentItem != nil {
+            self.title = title
+            avPlayer?.play()
+            isPlaying = true
+            updateNowPlaying()
             return
         }
         self.url = url
         self.title = title
         self.artworkURL = art
         avPlayer?.pause()
+        if let timeObserver { avPlayer?.removeTimeObserver(timeObserver); self.timeObserver = nil }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
         avPlayer = AVPlayer(url: url)
         avPlayer?.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
         addProgressObserver()
@@ -156,6 +246,8 @@ struct PodcastsView: View {
     }
 
     private func pause() {
+        publicationVersion += 1
+        validationTask?.cancel()
         avPlayer?.pause()
         isPlaying = false
         updateNowPlaying()
@@ -209,9 +301,7 @@ struct PodcastsView: View {
         center.skipBackwardCommand.preferredIntervals = [15]
         center.playCommand.addTarget { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
-                self?.avPlayer?.play()
-                self?.isPlaying = true
-                self?.updateNowPlaying()
+                self?.resumePublished()
             }
             return .success
         }
@@ -222,7 +312,7 @@ struct PodcastsView: View {
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if isPlaying { pause() } else { avPlayer?.play(); isPlaying = true; updateNowPlaying() }
+                if isPlaying { pause() } else { resumePublished() }
             }
             return .success
         }

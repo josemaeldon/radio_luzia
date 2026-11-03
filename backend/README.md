@@ -22,22 +22,28 @@ Abra http://127.0.0.1:3000. A senha não é incluída nos aplicativos. `.env`, b
 2. Para uma **Transmissão**, copie o endereço direto do mount na área de transmissões do AzuraCast (ex.: `https://servidor/listen/estacao/radio.mp3`). Uma transmissão pode conter apenas gravações, conforme a programação feita no AzuraCast.
 3. Para **Áudio gravado**, use uma URL HTTPS que responda com o arquivo de áudio (MP3, AAC ou outro formato suportado pelos dois sistemas). Esses itens aparecem também no catálogo dos apps, como um programa com um episódio.
 4. Para **Página pública**, use a URL pública do player ou da página de podcasts; ela abre externamente, nos detalhes da rádio.
-5. Para **Podcast (feed RSS)**, copie o link RSS do podcast. O feed é publicado como link externo nos detalhes. Esta versão não importa nem interpreta episódios de feeds RSS. Para reprodução nativa, cadastre cada áudio de episódio como **Áudio gravado**.
+5. Para **Podcast (feed RSS)**, copie o link RSS do podcast. Os episódios entram no catálogo nativo dos aplicativos. A API consulta o RSS/Atom e publica somente os links HTTPS dos áudios, sem retransmitir os arquivos. O link do feed também fica disponível nos detalhes. Se preferir, cadastre um episódio individual como **Áudio gravado**.
 6. Confirme os direitos, marque **Publicar no app** e, para áudio/transmissão, **Usar como reprodução principal**. Apenas um item pode ser principal. Os demais áudios gravados publicados ficam no catálogo de programas do app. Outras transmissões ficam cadastradas e podem ser escolhidas como principal no painel.
 7. Rascunhos ficam apenas no painel. Excluir/despublicar o principal deixa o endpoint de reprodução indisponível até você definir outro principal. Não há retorno automático à transmissão antiga.
 
-As URLs são validadas quanto ao formato HTTPS, mas o backend não baixa nem analisa o arquivo. Confirme a acessibilidade e o formato real do áudio nos dispositivos. Não coloque tokens privados ou senhas nas URLs: links publicados são públicos.
+As URLs são validadas quanto ao formato HTTPS. Para podcasts, o backend consulta o documento RSS/Atom, mas não baixa nem analisa o arquivo de áudio. Confirme a acessibilidade e o formato real do áudio nos dispositivos. Não coloque tokens privados ou senhas nas URLs: links publicados são públicos.
 
 O campo **Programação exclusiva de conteúdo gravado** registra sua declaração editorial; não filtra, fiscaliza nem modifica o áudio do AzuraCast. Nome, endereço AzuraCast e ID são disponibilizados na configuração pública para integrações. Os players gerenciados reproduzem os links cadastrados diretamente, sem consultar a API original para metadados. Não há consulta de ouvintes, teste de sinal, arte ou duração: `is_online` significa que existe principal publicado, e as contagens/durações do contrato de compatibilidade são zero.
 
 ## Conectar iOS e Android
 
-O backend precisa estar hospedado com HTTPS válido. Como ainda não há domínio definido, os apps preservam a integração anterior enquanto o endereço abaixo estiver vazio. **Defina o endereço nos dois apps antes de distribuir a versão gerenciada**; deixar vazio continua usando a rádio original, inclusive suas configurações de pedidos musicais.
+Os dois apps já estão configurados para `https://radio-luzia.vercel.app`. A API é a única fonte de links de reprodução; não existe retorno automático à estação antiga se o endereço estiver vazio, inválido ou indisponível.
 
-- **iOS:** em `ios/RadioLuzia/Resources/Info.plist`, preencha `RadioBackendURL` com a URL base, por exemplo `https://api.sua-radio.com` (sem `/api/v1`). Compile novamente no Xcode. No modo gerenciado, o WebSocket original não é conectado; a configuração de reprodução é consultada a cada 15 segundos.
-- **Android:** em `android/gradle.properties`, adicione `RADIO_BACKEND_URL=https://api.sua-radio.com`, ou forneça `-PRADIO_BACKEND_URL=https://api.sua-radio.com` ao Gradle. Compile uma nova versão. O app consulta os dados a cada 15 segundos.
+- **iOS:** a URL está em `ios/RadioLuzia/Resources/Info.plist`, na chave `RadioBackendURL`.
+- **Android:** a URL está em `android/gradle.properties`, na propriedade `RADIO_BACKEND_URL`, com o mesmo padrão no Gradle. O build rejeita uma URL vazia ou sem HTTPS.
 
-Depois dessa primeira compilação, novas URLs não exigem atualização na loja. As consultas atualizam o áudio principal disponível; um áudio já em execução não é trocado automaticamente no meio da reprodução. Os catálogos de áudios são atualizados ao abrir a seção. Com o backend configurado, falhas não redirecionam para a rádio antiga. Os pedidos musicais ficam desativados. Páginas e RSS aparecem em **Sobre a transmissão**.
+O botão principal reproduz exatamente o item marcado como **Usar como reprodução principal** no painel. Os apps consultam a API antes de iniciar/retomar a reprodução e verificam a configuração a cada 15 segundos. Se o principal mudar enquanto estiver tocando, o player troca para o novo URL. Se não houver principal publicado ou a consulta falhar, o player interrompe o áudio e não usa uma fonte antiga. A atualização depende da conexão: além do intervalo de consulta, cada requisição tem timeout de 15 segundos.
+
+Áudios gravados são reproduzidos pelo ID publicado na API, com validação antes de iniciar/retomar e durante a reprodução. Alterar o endereço de um áudio atualiza o player; excluir ou despublicar o item impede a continuação após a próxima verificação. Os controles da tela bloqueada/notificação também revalidam a publicação antes de retomar. Pedidos musicais permanecem desativados. Páginas públicas abrem externamente. Feeds RSS/Atom são interpretados pelo backend e seus episódios de áudio aparecem no catálogo nativo; o documento XML não é enviado ao player como se fosse um arquivo de áudio.
+
+É necessário compilar e instalar uma nova versão de cada app para receber esta integração. Depois disso, mudanças de conteúdo na API não exigem uma nova versão nas lojas. Caso mude o domínio da API, altere as configurações acima e compile novamente. Nunca coloque a senha administrativa ou o token do banco nos aplicativos.
+
+Para feeds, a consulta tem limite de oito segundos, 2 MB por documento e até 500 episódios. A API recusa fontes HTTP, redes privadas/locais, redirecionamentos para endereços privados e declarações XML de entidades. Feeds precisam estar publicamente acessíveis. Se um feed não puder ser consultado, o endpoint de episódios retorna 502 e os players não retomam uma cópia antiga. Como o áudio é servido diretamente pelo host de origem, o produtor também controla eventuais substituições no arquivo servido pela mesma URL.
 
 ## API
 
@@ -48,8 +54,8 @@ Sem autenticação, somente conteúdo publicado:
 | GET | `/health` | Saúde do processo |
 | GET | `/api/v1/config` | Configuração, principal e conteúdos publicados |
 | GET | `/api/v1/nowplaying` | Contrato compatível com os players existentes; 503 sem principal |
-| GET | `/api/v1/podcasts` | Catálogo de áudios gravados publicados |
-| GET | `/api/v1/podcast/:id/episodes` | Link de reprodução do áudio |
+| GET | `/api/v1/podcasts` | Catálogo de áudios gravados e feeds publicados |
+| GET | `/api/v1/podcast/:id/episodes` | Episódios de áudio ou do feed RSS/Atom |
 
 Administração:
 

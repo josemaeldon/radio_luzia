@@ -44,8 +44,8 @@ android {
         targetSdk = 35
         versionCode = 11
         versionName = "3.0"
-        val radioBackendUrl = providers.gradleProperty("RADIO_BACKEND_URL").orElse("").get()
-        require(radioBackendUrl.isEmpty() || (radioBackendUrl.startsWith("https://") && !radioBackendUrl.contains('"') && !radioBackendUrl.contains('\\'))) { "RADIO_BACKEND_URL deve ser HTTPS" }
+        val radioBackendUrl = providers.gradleProperty("RADIO_BACKEND_URL").orElse("https://radio-luzia.vercel.app").get()
+        require((radioBackendUrl.startsWith("https://") && !radioBackendUrl.contains('"') && !radioBackendUrl.contains('\\'))) { "RADIO_BACKEND_URL deve ser HTTPS" }
         buildConfigField("String", "RADIO_BACKEND_URL", "\"${radioBackendUrl.trimEnd('/')}\"")
     }
     buildTypes {
@@ -59,6 +59,7 @@ android {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)

@@ -59,10 +59,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,11 +94,18 @@ data class RequestSong(val requestId: String, val title: String, val artist: Str
 data class Podcast(val id: String, val title: String, val art: String?)
 data class PodcastEpisode(val id: String, val title: String, val download: String?)
 
+data class PlaybackStatus(val radio: Boolean = true, val contentId: String? = null, val playing: Boolean = false, val connecting: Boolean = false)
+
 class PodcastPlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
     private lateinit var notificationManager: NotificationManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var radioMode = true
+    private var activePodcastId: String? = null
+    private var activeContentId: String? = null
+    private var validation: Job? = null
+    private var generation = 0
     private var artworkBitmap: android.graphics.Bitmap? = null
 
     override fun onCreate() {
@@ -114,49 +124,95 @@ class PodcastPlaybackService : MediaSessionService() {
                 true
             )
             .build()
-        session = MediaSession.Builder(this, player).build()
+        val controlledPlayer = object : ForwardingPlayer(player) {
+            override fun play() { validatePlayback(resume = true) }
+            override fun setPlayWhenReady(playWhenReady: Boolean) { if (playWhenReady) validatePlayback(resume = true) else pausePlayback() }
+            override fun pause() { pausePlayback() }
+        }
+        session = MediaSession.Builder(this, controlledPlayer).build()
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) = updateNotification()
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateNotification()
+            override fun onPlaybackStateChanged(playbackState: Int) = updateNotification()
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = updateNotification()
         })
+        serviceScope.launch {
+            while (true) {
+                delay(15000)
+                if (activeContentId != null && validation?.isActive != true) validatePlayback(resume = player.playWhenReady)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureForegroundNotification()
         when (intent?.action) {
-            ACTION_PLAY_RADIO -> {
-                val url = intent.getStringExtra(EXTRA_URL)
-                if (!url.isNullOrEmpty()) {
-                    val metadata = MediaMetadata.Builder()
-                        .setTitle(intent.getStringExtra(EXTRA_TITLE) ?: "Rádio Santa Luzia")
-                        .setArtist(intent.getStringExtra(EXTRA_ARTIST) ?: "Rádio Santa Luzia")
-                        .setAlbumTitle(intent.getStringExtra(EXTRA_ALBUM))
-                        .setArtworkUri(intent.getStringExtra(EXTRA_ARTWORK)?.let(Uri::parse))
-                        .build()
-                    loadArtwork(intent.getStringExtra(EXTRA_ARTWORK))
-                    player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
-                    player.prepare()
-                    player.play()
-                }
-            }
-            ACTION_PAUSE_RADIO -> player.pause()
-            ACTION_TOGGLE_RADIO -> if (player.isPlaying) player.pause() else player.play()
-            ACTION_PLAY -> {
-                val url = intent.getStringExtra(EXTRA_URL)
-                val title = intent.getStringExtra(EXTRA_TITLE) ?: "Podcast"
-                if (!url.isNullOrEmpty()) {
-                    val metadata = androidx.media3.common.MediaMetadata.Builder()
-                        .setTitle(title)
-                        .setArtist("Rádio Santa Luzia • Podcasts")
-                        .build()
-                    player.setMediaItem(MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build())
-                    player.prepare()
-                    player.play()
-                }
-            }
-            ACTION_TOGGLE -> if (player.isPlaying) player.pause() else player.play()
+            ACTION_PLAY_RADIO -> { player.pause(); radioMode = true; validatePlayback(resume = true) }
+            ACTION_PLAY -> { player.pause(); radioMode = false; activeContentId = intent.getStringExtra(EXTRA_CONTENT_ID); activePodcastId = intent.getStringExtra(EXTRA_PODCAST_ID); validatePlayback(resume = true) }
+            ACTION_PAUSE_RADIO -> pausePlayback()
+            ACTION_TOGGLE_RADIO, ACTION_TOGGLE -> if (player.playWhenReady) pausePlayback() else validatePlayback(resume = true)
         }
-        return START_STICKY
+        return START_NOT_STICKY
+    }
+
+    private fun pausePlayback() {
+        generation++
+        validation?.cancel()
+        player.pause()
+        updateNotification()
+    }
+
+    private fun validatePlayback(resume: Boolean) {
+        validation?.cancel()
+        val request = ++generation
+        val requestedRadio = radioMode
+        val requestedId = activeContentId
+        val requestedPodcast = activePodcastId
+        validation = serviceScope.launch {
+            try {
+                val config = withContext(Dispatchers.IO) { RadioApi.config() }
+                if (request != generation) return@launch
+                val array = config.getJSONArray("contents")
+                val contents = (0 until array.length()).map { index ->
+                    val item = array.getJSONObject(index)
+                    PublishedAudio(item.get("id").toString(), item.getString("title"), item.getString("url"), item.getString("type"), item.optBoolean("published"), item.optBoolean("primary"))
+                }
+                if (!requestedRadio && requestedId == null) error("Episódio não informado.")
+                val content = if (requestedRadio) PublishedAudioSelection.select(contents, config.optJSONObject("primary")?.get("id")?.toString()) else {
+                    require(requestedPodcast != null && contents.any { it.id == requestedPodcast && it.published && it.type in listOf("audio", "podcast_feed") })
+                    val episodes = withContext(Dispatchers.IO) { RadioApi.episodes(requestedPodcast) }
+                    if (request != generation) return@launch
+                    val episode = (0 until episodes.length()).map { episodes.getJSONObject(it) }.firstOrNull { it.getString("id") == requestedId } ?: error("Episódio não publicado.")
+                    val selected = PublishedAudio(episode.getString("id"), episode.getString("title"), episode.getJSONObject("links").getString("download"), "audio", true, false)
+                    PublishedAudioSelection.select(listOf(selected), null, requestedId)
+                }
+                val url = content.url
+                val id = content.id
+                val changed = player.currentMediaItem?.localConfiguration?.uri?.toString() != url || activeContentId != id
+                activeContentId = id
+                if (changed) {
+                    val metadata = MediaMetadata.Builder().setTitle(content.title)
+                        .setArtist(config.getString("stationName")).build()
+                    player.setMediaItem(MediaItem.Builder().setMediaId(id).setUri(url).setMediaMetadata(metadata).build())
+                    player.prepare()
+                } else {
+                    if (player.mediaMetadata.title?.toString() != content.title) {
+                        val metadata = MediaMetadata.Builder().setTitle(content.title).setArtist(config.getString("stationName")).build()
+                        player.currentMediaItem?.let { player.replaceMediaItem(0, it.buildUpon().setMediaMetadata(metadata).build()) }
+                    }
+                    if (player.playbackState == Player.STATE_IDLE) player.prepare()
+                }
+                if (resume) player.play() else player.pause()
+                updateNotification()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (request != generation) return@launch
+                player.stop()
+                player.clearMediaItems()
+                activeContentId = null
+                updateNotification()
+            }
+        }
     }
 
     private fun ensureForegroundNotification() {
@@ -164,6 +220,7 @@ class PodcastPlaybackService : MediaSessionService() {
     }
 
     private fun updateNotification() {
+        playback.value = PlaybackStatus(radioMode, activeContentId, player.isPlaying, player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)
         if (::notificationManager.isInitialized) notificationManager.notify(NOTIFICATION_ID, buildNotification())
     }
 
@@ -213,6 +270,7 @@ class PodcastPlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
 
     override fun onDestroy() {
+        playback.value = PlaybackStatus()
         serviceScope.cancel()
         artworkBitmap?.recycle()
         session.release()
@@ -221,6 +279,9 @@ class PodcastPlaybackService : MediaSessionService() {
     }
 
     companion object {
+        val playback = MutableStateFlow(PlaybackStatus())
+        const val EXTRA_CONTENT_ID = "content_id"
+        const val EXTRA_PODCAST_ID = "podcast_id"
         private const val NOTIFICATION_CHANNEL_ID = "radio_playback"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_PLAY_RADIO = "br.com.cloudbrapp.radioluzia.PLAY_RADIO"
@@ -237,35 +298,28 @@ class PodcastPlaybackService : MediaSessionService() {
 }
 
 private object RadioApi {
-    private val managed get() = BuildConfig.RADIO_BACKEND_URL.isNotEmpty()
-    private val base get() = BuildConfig.RADIO_BACKEND_URL.ifEmpty { "https://webradio.cloudbr.app" }
-    private fun get(path: String): JSONObject = (URL(base + path).openConnection() as HttpURLConnection).run {
-        connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
-        if (responseCode !in 200..299) error("Resposta inválida")
-        inputStream.bufferedReader().use { JSONObject(it.readText()) }
+    private val base = BuildConfig.RADIO_BACKEND_URL.trimEnd('/')
+    private fun read(path: String): String {
+        require(Uri.parse(base).scheme == "https" && Uri.parse(base).host != null)
+        val connection = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            connection.connectTimeout = 15000; connection.readTimeout = 15000
+            connection.requestMethod = "GET"; connection.useCaches = false
+            connection.setRequestProperty("Cache-Control", "no-cache")
+            if (connection.responseCode !in 200..299) error("Não foi possível carregar a configuração publicada.")
+            return connection.inputStream.bufferedReader().use { it.readText() }
+        } finally { connection.disconnect() }
     }
-    fun nowPlaying(): JSONObject = get(if (managed) "/api/v1/nowplaying" else "/api/nowplaying/santaluziapgm")
+    fun config(): JSONObject = JSONObject(read("/api/v1/config"))
+    fun nowPlaying(): JSONObject = JSONObject(read("/api/v1/nowplaying"))
     fun managedLinks(): List<Pair<String, String>> {
-        if (!managed) return emptyList()
-        val contents = get("/api/v1/config").getJSONArray("contents")
+        val contents = config().getJSONArray("contents")
         return buildList { for (i in 0 until contents.length()) { val c = contents.getJSONObject(i); if (c.text("type") in listOf("public_page", "podcast_feed")) add(c.text("title") to c.text("url")) } }
     }
-    fun requests(): JSONArray = (URL("$base/api/station/2/requests").openConnection() as HttpURLConnection).run {
-        connectTimeout = 15000; readTimeout = 15000
-        inputStream.bufferedReader().use { JSONArray(it.readText()) }
-    }
-    fun requestSong(id: String): String = (URL("$base/api/station/2/request/$id").openConnection() as HttpURLConnection).run {
-        requestMethod = "POST"; setRequestProperty("Accept", "application/json"); doOutput = true
-        if (responseCode !in 200..299) error("Não foi possível enviar o pedido agora.")
-        inputStream.bufferedReader().use { JSONObject(it.readText()).optString("message", "Pedido enviado para a programação.") }
-    }
-    fun podcasts(): JSONArray = getArray(if (managed) "/api/v1/podcasts" else "/api/station/2/public/podcasts")
-    fun episodes(id: String): JSONArray = getArray(if (managed) "/api/v1/podcast/$id/episodes" else "/api/station/2/public/podcast/$id/episodes")
-    private fun getArray(path: String): JSONArray = (URL(base + path).openConnection() as HttpURLConnection).run {
-        connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
-        if (responseCode !in 200..299) error("Resposta inválida")
-        inputStream.bufferedReader().use { JSONArray(it.readText()) }
-    }
+    fun requests(): JSONArray = JSONArray()
+    fun requestSong(id: String): String = error("Pedidos não estão disponíveis.")
+    fun podcasts(): JSONArray = JSONArray(read("/api/v1/podcasts"))
+    fun episodes(id: String): JSONArray = JSONArray(read("/api/v1/podcast/$id/episodes"))
 }
 
 private fun JSONObject.text(key: String): String = optString(key, "")
@@ -283,7 +337,7 @@ private fun parseState(json: JSONObject, previous: RadioState): RadioState {
     val live = json.optJSONObject("live") ?: JSONObject()
     val current = json.optJSONObject("now_playing")?.track()
     val history = buildList { for (i in 0 until (json.optJSONArray("song_history")?.length() ?: 0)) add(json.getJSONArray("song_history").getJSONObject(i).track()) }
-    val selected = previous.selectedMount?.let { mounts.firstOrNull { mount -> mount.id == it.id } } ?: mounts.firstOrNull { it.isDefault } ?: mounts.maxByOrNull { it.bitrate }
+    val selected = mounts.firstOrNull { it.isDefault && it.url == station.listenUrl }
     return previous.copy(station = station, current = current, next = json.optJSONObject("playing_next")?.track(), history = history, listeners = json.optJSONObject("listeners")?.optInt("current") ?: 0, online = json.optBoolean("is_online"), live = live.optBoolean("is_live"), streamer = live.text("streamer_name"), selectedMount = selected)
 }
 
@@ -296,32 +350,50 @@ class RadioViewModel : ViewModel() {
     var podcastPlayingId by mutableStateOf<String?>(null); private set
     var podcastPlaying by mutableStateOf(false); private set
     var podcastsLoading by mutableStateOf(false); private set
+    private var refreshJob: Job? = null
     private var userWantsPlayback = false
-    init { refresh(); viewModelScope.launch { while (true) { delay(15000); refresh() } } }
-    fun refresh() = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.nowPlaying() }.onSuccess { json -> val parsed = parseState(json, state); val links = runCatching { RadioApi.managedLinks() }.getOrDefault(emptyList()); state = parsed.copy(station = parsed.station?.copy(managedLinks = links)) }.onFailure { state = if (BuildConfig.RADIO_BACKEND_URL.isNotEmpty()) state.copy(station = null, selectedMount = null, online = false, error = "Não foi possível carregar a configuração da rádio.") else state.copy(error = "Não foi possível atualizar os dados da rádio.") } }
+    init {
+        refresh()
+        viewModelScope.launch { while (true) { delay(15000); refresh() } }
+        viewModelScope.launch {
+            PodcastPlaybackService.playback.collect { status ->
+                state = state.copy(isPlaying = status.radio && status.playing, connecting = status.radio && status.connecting)
+                podcastPlayingId = if (status.radio) null else status.contentId
+                podcastPlaying = !status.radio && status.playing
+            }
+        }
+    }
+    fun refresh() {
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            try {
+                val (json, links) = withContext(Dispatchers.IO) {
+                    RadioApi.nowPlaying() to RadioApi.managedLinks()
+                }
+                val parsed = parseState(json, state)
+                state = parsed.copy(station = parsed.station?.copy(managedLinks = links))
+            } catch (_: Exception) {
+                state = state.copy(station = null, selectedMount = null, online = false, current = null, error = "Não foi possível carregar a configuração da rádio.")
+            }
+        }
+    }
     fun clearError() { state = state.copy(error = null) }
     fun toggle(context: Context) { if (state.isPlaying || state.connecting) pause(context) else play(context) }
     fun play(context: Context) {
-        val mount = state.selectedMount ?: state.station?.mounts?.firstOrNull() ?: return
-        if (!state.online) { state = state.copy(error = "A rádio está fora do ar neste momento."); return }
         userWantsPlayback = true
-        state = state.copy(isPlaying = true, connecting = false)
+        state = state.copy(isPlaying = false, connecting = true, error = null)
         ContextCompat.startForegroundService(context, Intent(context, PodcastPlaybackService::class.java).apply {
             action = PodcastPlaybackService.ACTION_PLAY_RADIO
-            putExtra(PodcastPlaybackService.EXTRA_URL, mount.url)
-            putExtra(PodcastPlaybackService.EXTRA_TITLE, state.current?.title ?: "Rádio Santa Luzia")
-            putExtra(PodcastPlaybackService.EXTRA_ARTIST, state.current?.artist ?: "Rádio Santa Luzia")
-            putExtra(PodcastPlaybackService.EXTRA_ALBUM, state.current?.album)
-            putExtra(PodcastPlaybackService.EXTRA_ARTWORK, state.current?.art)
         })
+        refresh()
     }
     fun pause(context: Context) { userWantsPlayback = false; context.startService(Intent(context, PodcastPlaybackService::class.java).apply { action = PodcastPlaybackService.ACTION_PAUSE_RADIO }); state = state.copy(isPlaying = false, connecting = false) }
     fun selectMount(mount: Mount, context: Context) { val wasPlaying = state.isPlaying || state.connecting; pause(context); state = state.copy(selectedMount = mount); if (wasPlaying) play(context) }
     fun loadRequests() = viewModelScope.launch(Dispatchers.IO) { requestsLoading = true; runCatching { RadioApi.requests() }.onSuccess { array -> requests = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { item -> val song = item.optJSONObject("song") ?: JSONObject(); add(RequestSong(item.text("request_id"), song.text("title").ifEmpty { song.text("text") }, song.text("artist"), song.text("album"), song.optString("art").takeIf { it.startsWith("http") })) } } }; requestsLoading = false }
     fun request(song: RequestSong, onResult: (String) -> Unit) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.requestSong(song.requestId) }.onSuccess { onResult(it) }.onFailure { onResult(it.message ?: "Não foi possível enviar o pedido.") } }
-    fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }; podcastsLoading = false }
+    fun loadPodcasts() = viewModelScope.launch(Dispatchers.IO) { podcastsLoading = true; runCatching { RadioApi.podcasts() }.onSuccess { array -> podcasts = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(Podcast(it.text("id"), it.text("title"), it.optString("art").takeIf { value -> value.startsWith("http") })) } } }.onFailure { podcasts = emptyList() }; podcastsLoading = false }
     fun loadEpisodes(podcast: Podcast) = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.episodes(podcast.id) }.onSuccess { array -> episodes = buildList { for (i in 0 until array.length()) array.optJSONObject(i)?.let { add(PodcastEpisode(it.text("id"), it.text("title"), it.optJSONObject("links")?.optString("download")?.takeIf { value -> value.startsWith("http") })) } } } }
-    fun togglePodcast(context: Context, episode: PodcastEpisode) {
+    fun togglePodcast(context: Context, episode: PodcastEpisode, podcast: Podcast) {
         val url = episode.download ?: return
         if (podcastPlayingId == episode.id) {
             context.startService(Intent(context, PodcastPlaybackService::class.java).apply { action = PodcastPlaybackService.ACTION_TOGGLE })
@@ -335,6 +407,8 @@ class RadioViewModel : ViewModel() {
         podcastPlaying = true
         ContextCompat.startForegroundService(context, Intent(context, PodcastPlaybackService::class.java).apply {
             action = PodcastPlaybackService.ACTION_PLAY
+            putExtra(PodcastPlaybackService.EXTRA_CONTENT_ID, episode.id)
+            putExtra(PodcastPlaybackService.EXTRA_PODCAST_ID, podcast.id)
             putExtra(PodcastPlaybackService.EXTRA_URL, url)
             putExtra(PodcastPlaybackService.EXTRA_TITLE, episode.title)
         })
@@ -617,7 +691,13 @@ private fun RequestsDialog(vm: RadioViewModel, close: () -> Unit) {
 @Composable
 private fun PodcastsDialog(vm: RadioViewModel, context: Context, close: () -> Unit) {
     var selected by remember { mutableStateOf<Podcast?>(null) }
-    LaunchedEffect(Unit) { vm.loadPodcasts() }
+    LaunchedEffect(selected?.id) {
+        while (true) {
+            vm.loadPodcasts().join()
+            selected?.let { vm.loadEpisodes(it).join() }
+            delay(15000)
+        }
+    }
     AlertDialog(
         onDismissRequest = close,
         title = { Text(selected?.title ?: "Podcasts") },
@@ -642,7 +722,7 @@ private fun PodcastsDialog(vm: RadioViewModel, context: Context, close: () -> Un
                         ListItem(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { vm.togglePodcast(context, episode) },
+                                .clickable { selected?.let { vm.togglePodcast(context, episode, it) } },
                             headlineContent = { Text(episode.title) },
                             leadingContent = { Icon(if (isPlaying) Icons.Default.PauseCircle else Icons.Default.PlayCircle, if (isPlaying) "Pausar" else "Reproduzir") }
                         )

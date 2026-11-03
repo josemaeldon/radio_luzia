@@ -3,6 +3,10 @@ import MediaPlayer
 import Observation
 import UIKit
 
+extension Notification.Name {
+    static let primaryPlaybackRequested = Notification.Name("RadioLuziaPrimaryPlaybackRequested")
+}
+
 @MainActor
 @Observable
 final class RadioPlayer {
@@ -26,14 +30,16 @@ final class RadioPlayer {
     private(set) var selectedMountID: Int?
     var errorMessage: String?
 
-    private let api = AzuraCastAPI.shared
-    private let socket = NowPlayingSocket()
+    private let api: AzuraCastAPI
     private let player = AVPlayer()
     private var statusObservation: NSKeyValueObservation?
     private var itemObservation: NSObjectProtocol?
     private var stalledObservation: NSObjectProtocol?
     private var interruptionObservation: NSObjectProtocol?
     private var activeStreamURL: URL?
+    private var playbackVersion = 0
+    private var playbackRequest: Task<Void, Never>?
+    private var metadataRequestID = 0
     private var managedRefreshTask: Task<Void, Never>?
     private var started = false
     private var wantsPlayback = false
@@ -53,7 +59,8 @@ final class RadioPlayer {
             ?? nowPlaying?.station.preferredMount
     }
 
-    init() {
+    init(api: AzuraCastAPI = .shared) {
+        self.api = api
         configureAudioSession()
         configurePlayerObservation()
         configureRemoteCommands()
@@ -64,17 +71,11 @@ final class RadioPlayer {
         guard !started else { return }
         started = true
         await refreshMetadata(showError: false)
-        if AzuraCastAPI.isManaged {
-            managedRefreshTask = Task { [weak self] in
-                while !Task.isCancelled && self != nil {
-                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
-                    await self?.refreshMetadata(showError: false)
-                }
+        managedRefreshTask = Task { [weak self] in
+            while !Task.isCancelled && self != nil {
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                if self?.playbackRequest == nil { await self?.refreshMetadata(showError: false) }
             }
-            return
-        }
-        await socket.connect { [weak self] model in
-            self?.apply(model)
         }
     }
 
@@ -83,24 +84,29 @@ final class RadioPlayer {
     }
 
     func play() {
-        // A manual radio play switches the system Now Playing item away from
-        // a paused podcast, if one was left in the media session.
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        NotificationCenter.default.post(name: .primaryPlaybackRequested, object: nil)
+        playbackRequest?.cancel()
+        playbackVersion += 1
+        let version = playbackVersion
         wantsPlayback = true
-        guard nowPlaying?.isOnline != false else {
-            wantsPlayback = false
-            errorMessage = "A rádio está fora do ar neste momento."
-            return
-        }
-        interruptionResumeTask?.cancel()
-        let recreateItem = pausedAt.map { Date().timeIntervalSince($0) >= stalePauseThreshold } ?? false
-        pausedAt = nil
-        if activateAndPlay(recreateItemIfNeeded: recreateItem) {
-            schedulePlaybackRecovery()
+        state = .connecting
+        playbackRequest = Task { [weak self] in
+            guard let self else { return }
+            defer { if version == playbackVersion { playbackRequest = nil } }
+            guard await refreshMetadata(showError: true) else { return }
+            guard !Task.isCancelled, wantsPlayback, nowPlaying != nil else { return }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            interruptionResumeTask?.cancel()
+            let recreateItem = pausedAt.map { Date().timeIntervalSince($0) >= stalePauseThreshold } ?? false
+            pausedAt = nil
+            if activateAndPlay(recreateItemIfNeeded: recreateItem) { schedulePlaybackRecovery() }
         }
     }
 
     func pause() {
+        playbackVersion += 1
+        playbackRequest?.cancel()
+        playbackRequest = nil
         wantsPlayback = false
         shouldResumeAfterInterruption = false
         interruptionResumeTask?.cancel()
@@ -114,7 +120,6 @@ final class RadioPlayer {
         player.replaceCurrentItem(with: nil)
         activeStreamURL = nil
         play()
-        Task { await refreshMetadata(showError: true) }
     }
 
     func selectMount(_ mount: Mount) {
@@ -127,16 +132,26 @@ final class RadioPlayer {
         if resume { play() }
     }
 
-    func refreshMetadata(showError: Bool = true) async {
+    @discardableResult
+    func refreshMetadata(showError: Bool = true) async -> Bool {
+        metadataRequestID += 1
+        let requestID = metadataRequestID
         do {
-            apply(try await api.nowPlaying())
+            let model = try await api.nowPlaying()
+            guard !Task.isCancelled, requestID == metadataRequestID else { return false }
+            apply(model)
+            return true
         } catch {
-            if AzuraCastAPI.isManaged {
-                pause()
-                nowPlaying = nil
-                selectedMountID = nil
-            }
-            if showError { errorMessage = "Não foi possível atualizar os dados da rádio." }
+            guard !Task.isCancelled, requestID == metadataRequestID else { return false }
+            pause()
+            player.replaceCurrentItem(with: nil)
+            activeStreamURL = nil
+            nowPlaying = nil
+            selectedMountID = nil
+            if !Self.isPodcastNowPlaying { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
+            state = .failed("Nenhum áudio publicado disponível.")
+            if showError { errorMessage = "Não foi possível carregar o áudio publicado na API." }
+            return false
         }
     }
 
@@ -170,6 +185,7 @@ final class RadioPlayer {
             return
         }
 
+        let previousURL = activeStreamURL
         let songChanged = currentTrack?.song.id != model.nowPlaying.song.id
         nowPlaying = model
         lastAppliedPlayedAt = model.nowPlaying.playedAt
@@ -182,13 +198,14 @@ final class RadioPlayer {
         } else {
             lastMetadataUpdate = Date()
         }
-        if selectedMountID == nil || !model.station.mounts.contains(where: { $0.id == selectedMountID }) {
-            let saved = UserDefaults.standard.integer(forKey: "selectedMountID")
-            selectedMountID = model.station.mounts.contains(where: { $0.id == saved })
-                ? saved
-                : model.station.preferredMount?.id
+        selectedMountID = model.station.preferredMount?.id
+        if previousURL != nil && previousURL != model.station.listenURL {
+            player.replaceCurrentItem(with: nil)
+            activeStreamURL = nil
+            if wantsPlayback && activateAndPlay() { schedulePlaybackRecovery() }
         }
         if songChanged { currentArtworkSongID = nil }
+        errorMessage = nil
         updateNowPlayingCenter()
     }
 
@@ -348,6 +365,8 @@ final class RadioPlayer {
             guard let self else { return }
             for attempt in 0..<8 {
                 guard !Task.isCancelled, self.wantsPlayback else { return }
+                await self.refreshMetadata(showError: false)
+                guard !Task.isCancelled, self.wantsPlayback else { return }
                 if self.activateAndPlay(recreateItemIfNeeded: recreateItem) {
                     self.schedulePlaybackRecovery()
                     return
@@ -386,6 +405,8 @@ final class RadioPlayer {
         interruptionResumeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self, self.state != .paused, self.state != .idle else { return }
+            await self.refreshMetadata(showError: false)
+            guard !Task.isCancelled, self.wantsPlayback else { return }
             self.state = .connecting
             self.activeStreamURL = nil
             self.player.replaceCurrentItem(with: nil)

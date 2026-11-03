@@ -18,3 +18,88 @@ final class NowPlayingTests: XCTestCase {
         XCTAssertEqual(song.customFields, .array([]))
     }
 }
+
+private final class ManagedAPIProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var payload = Data()
+    nonisolated(unsafe) static var status = 200
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.requests.append(request)
+        let response = HTTPURLResponse(url: request.url!, statusCode: Self.status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.payload)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+extension NowPlayingTests {
+    private func managedPayload(url: String = "https://audio.example.com/primary.mp3") throws -> Data {
+        let original = #"{"station":{"id":2,"name":"Paróquia Santa Luzia","shortcode":"santaluziapgm","description":"Web Rádio","timezone":"America/Belem","listen_url":"https://example.com/192","public_player_url":"https://example.com/public","requests_enabled":true,"mounts":[]},"listeners":{"total":3,"unique":2,"current":2},"live":{"is_live":false,"streamer_name":"","broadcast_start":null,"art":null},"now_playing":{"sh_id":10,"played_at":1000,"duration":240,"playlist":"Músicas","streamer":"","is_request":false,"song":{"id":"song","art":null,"custom_fields":{},"text":"Artista - Faixa","artist":"Artista","title":"Faixa","album":"Álbum","genre":"Gospel","isrc":"","lyrics":""},"elapsed":60,"remaining":180},"playing_next":null,"song_history":[],"is_online":true}"#.data(using: .utf8)!
+        var json = try JSONSerialization.jsonObject(with: original) as! [String: Any]
+        var station = json["station"] as! [String: Any]
+        station["listen_url"] = url
+        station["requests_enabled"] = false
+        station["mounts"] = [["id": 42, "name": "Principal publicado", "url": url, "bitrate": 0, "format": "audio", "is_default": true, "listeners": ["total": 0, "unique": 0, "current": 0]]]
+        json["station"] = station
+        return try JSONSerialization.data(withJSONObject: json)
+    }
+
+    @MainActor
+    func testAPIControlsPrimaryAndClearsRemovedContentWithoutLegacyFallback() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ManagedAPIProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        ManagedAPIProtocol.requests = []
+        ManagedAPIProtocol.status = 200
+        ManagedAPIProtocol.payload = try managedPayload()
+        let api = AzuraCastAPI(baseURL: URL(string: "https://backend.test")!, session: session)
+        let player = RadioPlayer(api: api)
+        let first = await player.refreshMetadata()
+        XCTAssertTrue(first)
+        XCTAssertEqual(player.selectedMount?.id, 42)
+        XCTAssertEqual(player.selectedMount?.url.absoluteString, "https://audio.example.com/primary.mp3")
+        ManagedAPIProtocol.payload = try managedPayload(url: "https://audio.example.com/changed.mp3")
+        let changed = await player.refreshMetadata()
+        XCTAssertTrue(changed)
+        XCTAssertEqual(player.selectedMount?.url.absoluteString, "https://audio.example.com/changed.mp3")
+        ManagedAPIProtocol.status = 503
+        ManagedAPIProtocol.payload = Data("{}".utf8)
+        let removed = await player.refreshMetadata(showError: false)
+        XCTAssertFalse(removed)
+        XCTAssertNil(player.nowPlaying)
+        XCTAssertNil(player.selectedMount)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(ManagedAPIProtocol.requests.count, 3)
+        XCTAssertTrue(ManagedAPIProtocol.requests.allSatisfy { $0.url?.host == "backend.test" && $0.url?.path == "/api/v1/nowplaying" && $0.cachePolicy == .reloadIgnoringLocalCacheData })
+        XCTAssertEqual(AzuraCastAPI.managedBaseURL?.absoluteString, "https://radio-luzia.vercel.app")
+    }
+
+    @MainActor
+    func testPodcastEpisodesUsePublishedFeedURLsAndRejectRemovedEpisodes() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ManagedAPIProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        ManagedAPIProtocol.status = 200
+        ManagedAPIProtocol.requests = []
+        ManagedAPIProtocol.payload = Data(#"[{"id":"9-episode-hash","title":"Episódio do feed","links":{"download":"https://audio.example.com/episode.mp3"}}]"#.utf8)
+        let api = AzuraCastAPI(baseURL: URL(string: "https://backend.test")!, session: session)
+        let episode = try await api.publishedEpisode("9-episode-hash", podcastID: "9")
+        XCTAssertEqual(episode.links.download?.absoluteString, "https://audio.example.com/episode.mp3")
+        ManagedAPIProtocol.payload = Data("[]".utf8)
+        do { _ = try await api.publishedEpisode("9-episode-hash", podcastID: "9"); XCTFail("Removed episodes must not resume") }
+        catch { XCTAssertTrue(error is AzuraCastAPI.APIError) }
+        XCTAssertEqual(ManagedAPIProtocol.requests.count, 2)
+        XCTAssertTrue(ManagedAPIProtocol.requests.allSatisfy { $0.url?.path == "/api/v1/podcast/9/episodes" })
+    }
+
+    func testMissingBackendNeverUsesOldStation() async throws {
+        let api = AzuraCastAPI(baseURL: nil)
+        do { _ = try await api.nowPlaying(); XCTFail("Missing API URL must fail closed") }
+        catch { XCTAssertTrue(error is AzuraCastAPI.APIError) }
+    }
+}

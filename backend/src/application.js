@@ -1,4 +1,5 @@
 import express from "express";
+import { readPublicFeed, parsePodcastFeed } from "./podcast-feed.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { openDatabase, DatabaseRateLimitStore } from "./database.js";
@@ -70,6 +71,7 @@ export async function createApp({
   adminPassword,
   secureCookies = false,
   trustProxy = false,
+  feedReader = readPublicFeed,
 } = {}) {
   if (!adminPassword || adminPassword.length < 10)
     throw new Error("Defina ADMIN_PASSWORD com pelo menos 10 caracteres.");
@@ -349,24 +351,43 @@ export async function createApp({
   app.get("/api/v1/podcasts", async (_req, res) =>
     res.set("Cache-Control", "no-store").json(
       (await list())
-        .filter((c) => c.published && c.type === "audio")
+        .filter(
+          (c) => c.published && ["audio", "podcast_feed"].includes(c.type),
+        )
         .map((c) => ({
           id: String(c.id),
           title: c.title,
           description_short: c.description,
           art: null,
-          links: { public_feed: null },
+          links: { public_feed: c.type === "podcast_feed" ? c.url : null },
         })),
     ),
   );
   app.get("/api/v1/podcast/:id/episodes", async (req, res) => {
     const content = (await list()).find(
       (c) =>
-        String(c.id) === req.params.id && c.published && c.type === "audio",
+        String(c.id) === req.params.id &&
+        c.published &&
+        ["audio", "podcast_feed"].includes(c.type),
     );
     if (!content)
       return res.status(404).json({ error: "Áudio não encontrado." });
-    res.set("Cache-Control", "no-store").json([
+    res.set("Cache-Control", "no-store");
+    if (content.type === "podcast_feed") {
+      try {
+        return res.json(
+          parsePodcastFeed(await feedReader(content.url), content),
+        );
+      } catch {
+        return res
+          .status(502)
+          .json({
+            error:
+              "Não foi possível carregar o feed. Confira se o link é um RSS público com episódios de áudio HTTPS.",
+          });
+      }
+    }
+    res.json([
       {
         id: String(content.id),
         title: content.title,

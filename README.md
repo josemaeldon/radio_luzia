@@ -1,17 +1,20 @@
 # Rádio Santa Luzia
 
-App iOS nativo em SwiftUI para a **Paróquia Santa Luzia**, integrado ao AzuraCast.
+Aplicativos nativos iOS (SwiftUI) e Android (Kotlin/Compose) para a **Paróquia Santa Luzia**, com reprodução controlada pela API administrativa.
 
 ## Recursos
 
-- Áudio Icecast com `AVPlayer`, reprodução em segundo plano e AirPlay
-- metadados em tempo real via WebSocket/Centrifugo com reconexão exponencial
-- progresso sincronizado, capa, título, artista, álbum, gênero, ISRC, letra e playlist
-- próxima faixa, histórico, DJ ao vivo, ouvintes e status da estação
-- seleção dos mounts/qualidades disponíveis
-- pedidos musicais pela API pública do AzuraCast
-- controles no Lock Screen, Control Center e acessórios Bluetooth
-- Liquid Glass no iOS 26 e fallback nativo com Material no iOS 18+
+- Reprodução do conteúdo principal publicado em `https://radio-luzia.vercel.app`
+- Transmissões e áudios gravados hospedados no AzuraCast ou em outro servidor HTTPS
+- Catálogo nativo de podcasts com episódios de feeds RSS/Atom publicados no painel
+- Atualização da configuração a cada 15 segundos e revalidação ao iniciar/retomar
+- Troca do áudio em execução quando seu endereço é alterado na API
+- Interrupção de conteúdos removidos/despublicados ou cuja publicação não possa ser verificada
+- Reprodução em segundo plano, AirPlay no iOS e controles de mídia/Bluetooth
+- Páginas públicas acessíveis como links, sem tratá-las como arquivos de áudio
+- Liquid Glass no iOS 26 e Material no iOS 18+
+
+A API é a única fonte de reprodução. Os apps não retomam a transmissão antiga em caso de falha e não disponibilizam pedidos musicais.
 
 ## Estrutura
 
@@ -22,7 +25,7 @@ App iOS nativo em SwiftUI para a **Paróquia Santa Luzia**, integrado ao AzuraCa
 
 Abra `ios/RadioLuzia.xcodeproj` no Xcode, selecione sua equipe em **Signing & Capabilities** e execute em um iPhone ou simulador. O bundle id inicial é `br.com.cloudbrapp.radioluzia`.
 
-Para Android, abra a pasta `android/` no Android Studio e sincronize o Gradle. O application id também é `br.com.cloudbrapp.radioluzia`.
+Para Android, abra a pasta `android/` no Android Studio e sincronize o Gradle. O application id é `org.santaluzia.radio`.
 
 O arquivo `ios/project.yml` documenta a estrutura do projeto iOS e pode ser usado com XcodeGen se desejado.
 
