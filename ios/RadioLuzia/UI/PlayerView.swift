@@ -13,7 +13,7 @@ struct PlayerView: View {
                     .ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 28) {
-                        ArtworkView(url: player.artworkURL, size: min(UIScreen.main.bounds.width - 48, 320))
+                        ArtworkView(size: min(UIScreen.main.bounds.width - 48, 320))
                         VStack(spacing: 10) {
                             Text(!player.hasPlayableContent ? "Seu player de áudio" : player.primaryPlaybackTitle)
                                 .font(.system(.title2, design: .rounded, weight: .bold))

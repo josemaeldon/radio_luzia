@@ -208,12 +208,14 @@ class PodcastPlaybackService : MediaSessionService() {
                 activeContentId = id
                 if (changed) {
                     val metadata = MediaMetadata.Builder().setTitle(content.title)
-                        .setArtist(config.getString("stationName")).build()
+                        .setArtist(config.getString("stationName"))
+                        .setArtworkData(resources.openRawResource(R.drawable.santa_luzia_logo).use { it.readBytes() }, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
                     player.setMediaItem(MediaItem.Builder().setMediaId(id).setUri(url).setMediaMetadata(metadata).build())
                     player.prepare()
                 } else {
                     if (player.mediaMetadata.title?.toString() != content.title) {
-                        val metadata = MediaMetadata.Builder().setTitle(content.title).setArtist(config.getString("stationName")).build()
+                        val metadata = MediaMetadata.Builder().setTitle(content.title).setArtist(config.getString("stationName"))
+                        .setArtworkData(resources.openRawResource(R.drawable.santa_luzia_logo).use { it.readBytes() }, MediaMetadata.PICTURE_TYPE_FRONT_COVER).build()
                         player.currentMediaItem?.let { player.replaceMediaItem(0, it.buildUpon().setMediaMetadata(metadata).build()) }
                     }
                     if (player.playbackState == Player.STATE_IDLE) player.prepare()
@@ -252,7 +254,7 @@ class PodcastPlaybackService : MediaSessionService() {
             .setContentTitle(title)
             .setContentText(artist)
             .setSubText("Rádio Santa Luzia")
-            .setLargeIcon(artworkBitmap ?: BitmapFactory.decodeResource(resources, R.drawable.default_station_artwork))
+            .setLargeIcon(BitmapFactory.decodeResource(resources, R.drawable.santa_luzia_logo))
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -519,6 +521,17 @@ private fun drawWrappedText(canvas: Canvas, text: String, x: Float, baseline: Fl
     if (line.isNotEmpty() && lineNumber < maxLines) canvas.drawText(line, x, baseline + lineNumber * (textSize + 8f), paint)
 }
 
+@Composable private fun CrestArtwork(modifier: Modifier = Modifier) {
+    Box(modifier.background(Brush.linearGradient(listOf(Color(0xFF150410), Plum))), contentAlignment = Alignment.Center) {
+        Image(
+            androidx.compose.ui.res.painterResource(R.drawable.santa_luzia_logo),
+            "Brasão da Paróquia Santa Luzia",
+            Modifier.fillMaxSize().padding(27.dp),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
 @Composable private fun RemoteArtwork(url: String?, modifier: Modifier = Modifier) {
     val context = LocalContext.current; var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
     LaunchedEffect(url) { bitmap = withContext(Dispatchers.IO) { runCatching { if (url != null) URL(url).openStream().use(BitmapFactory::decodeStream) else null }.getOrNull() } }
@@ -534,7 +547,7 @@ private fun drawWrappedText(canvas: Canvas, text: String, x: Float, baseline: Fl
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             item { Header(state, onDetails = { dialog = "details" }, onRequests = { dialog = "requests" }, onPodcasts = { dialog = "podcasts" }, onQuality = { dialog = "quality" }, onInstagram = { vm.openInstagram(context) }, onWhatsApp = { vm.openWhatsApp(context) }) }
-            item { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { RemoteArtwork(state.current?.art, Modifier.size(340.dp).clip(RoundedCornerShape(28.dp))); Spacer(Modifier.height(22.dp)); Text(state.current?.title ?: "Rádio Santa Luzia", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center); Text(state.current?.artist ?: "A luz que toca você", color = Color.White.copy(.68f), fontSize = 16.sp, textAlign = TextAlign.Center); if (!state.current?.album.isNullOrEmpty()) Text(state.current!!.album, color = Gold.copy(.8f), fontSize = 12.sp) } }
+            item { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { CrestArtwork(Modifier.size(340.dp).clip(RoundedCornerShape(28.dp))); Spacer(Modifier.height(22.dp)); Text(state.current?.title ?: "Rádio Santa Luzia", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center); Text(state.current?.artist ?: "A luz que toca você", color = Color.White.copy(.68f), fontSize = 16.sp, textAlign = TextAlign.Center); if (!state.current?.album.isNullOrEmpty()) Text(state.current!!.album, color = Gold.copy(.8f), fontSize = 12.sp) } }
             item { Controls(state, vm, context) }
             state.next?.let { next -> item { TrackCard("A SEGUIR", next, Icons.Default.SkipNext) } }
             if (state.history.isNotEmpty()) item { Column(Modifier.card()) { Text("TOCOU RECENTEMENTE", color = Color.White.copy(.7f), fontWeight = FontWeight.Bold, letterSpacing = 1.sp); state.history.take(5).forEach { TrackLine(it) } } }

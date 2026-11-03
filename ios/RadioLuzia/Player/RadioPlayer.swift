@@ -33,7 +33,6 @@ final class RadioPlayer {
     private let player = AVPlayer()
     private var activeURL: URL?
     private var selectedArtwork: URL?
-    private var loadedArtwork: URL?
     private var started = false
     private var wantsPlayback = false
     private var resumeAfterInterruption = false
@@ -217,7 +216,6 @@ final class RadioPlayer {
         player.pause()
         player.replaceCurrentItem(with: nil)
         activeURL = nil
-        loadedArtwork = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
     private func configureAudioSession() {
@@ -339,20 +337,13 @@ final class RadioPlayer {
         ]
         if playbackDuration > 0 { info[MPMediaItemPropertyPlaybackDuration] = playbackDuration }
         if episodeSelection != nil { info[MPMediaItemPropertyAlbumTitle] = "Luzia Player • Conteúdos"; info[MPMediaItemPropertyMediaType] = NSNumber(value: MPMediaType.podcast.rawValue) }
-        if let artwork = MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyArtwork] { info[MPMediaItemPropertyArtwork] = artwork }
+        if let image = UIImage(named: "SantaLuziaLogo") {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         let canSeek = playbackDuration > 0
         MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = canSeek
         MPRemoteCommandCenter.shared().skipForwardCommand.isEnabled = canSeek
         MPRemoteCommandCenter.shared().skipBackwardCommand.isEnabled = canSeek
-        guard let art = artworkURL, loadedArtwork != art else { return }
-        loadedArtwork = art
-        Task { [weak self] in
-            guard let (data, _) = try? await URLSession.shared.data(from: art), let image = UIImage(data: data),
-                  let self, primaryPlaybackURL == url, artworkURL == art else { return }
-            var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-            updated[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
-        }
     }
 }
