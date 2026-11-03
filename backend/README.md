@@ -22,8 +22,8 @@ Abra http://127.0.0.1:3000. A senha não é incluída nos aplicativos. `.env`, b
 2. Para uma **Transmissão**, copie o endereço direto do mount na área de transmissões do AzuraCast (ex.: `https://servidor/listen/estacao/radio.mp3`). Uma transmissão pode conter apenas gravações, conforme a programação feita no AzuraCast.
 3. Para **Áudio gravado**, use uma URL HTTPS que responda com o arquivo de áudio (MP3, AAC ou outro formato suportado pelos dois sistemas). Esses itens aparecem também no catálogo dos apps, como um programa com um episódio.
 4. Para **Página pública**, use a URL pública do player ou da página de podcasts; ela abre externamente, nos detalhes da rádio.
-5. Para **Podcast (feed RSS)**, copie o link RSS do podcast. Os episódios entram no catálogo nativo dos aplicativos. A API consulta o RSS/Atom e publica somente os links HTTPS dos áudios, sem retransmitir os arquivos. O link do feed também fica disponível nos detalhes. Se preferir, cadastre um episódio individual como **Áudio gravado**.
-6. Confirme os direitos, marque **Publicar no app** e, para áudio/transmissão, **Usar como reprodução principal**. Apenas um item pode ser principal. Os demais áudios gravados publicados ficam no catálogo de programas do app. Outras transmissões ficam cadastradas e podem ser escolhidas como principal no painel.
+5. Para **Podcast (feed RSS)**, copie o link RSS ou a página pública de um podcast no AzuraCast (como `/public/estacao/podcasts/id`). Os episódios entram no catálogo nativo dos aplicativos. A API consulta o RSS/Atom e publica somente os links HTTPS dos áudios, sem retransmitir os arquivos. O link do feed também fica disponível nos detalhes. Se preferir, cadastre um episódio individual como **Áudio gravado**.
+6. Confirme os direitos, marque **Publicar no app** e, para áudio, transmissão ou podcast, **Usar como reprodução principal**. Apenas um item pode ser principal. Em podcasts, o app revalida a fila no fim de cada episódio e nas consultas periódicas; se o feed ficar vazio, for despublicado ou estiver indisponível, a reprodução é interrompida. Os demais áudios gravados publicados ficam no catálogo de programas do app. Outras transmissões ficam cadastradas e podem ser escolhidas como principal no painel.
 7. Rascunhos ficam apenas no painel. Excluir/despublicar o principal deixa o endpoint de reprodução indisponível até você definir outro principal. Não há retorno automático à transmissão antiga.
 
 As URLs são validadas quanto ao formato HTTPS. Para podcasts, o backend consulta o documento RSS/Atom, mas não baixa nem analisa o arquivo de áudio. Confirme a acessibilidade e o formato real do áudio nos dispositivos. Não coloque tokens privados ou senhas nas URLs: links publicados são públicos.
@@ -37,13 +37,15 @@ Os dois apps já estão configurados para `https://radio-luzia.vercel.app`. A AP
 - **iOS:** a URL está em `ios/RadioLuzia/Resources/Info.plist`, na chave `RadioBackendURL`.
 - **Android:** a URL está em `android/gradle.properties`, na propriedade `RADIO_BACKEND_URL`, com o mesmo padrão no Gradle. O build rejeita uma URL vazia ou sem HTTPS.
 
-O botão principal reproduz exatamente o item marcado como **Usar como reprodução principal** no painel. Os apps consultam a API antes de iniciar/retomar a reprodução e verificam a configuração a cada 15 segundos. Se o principal mudar enquanto estiver tocando, o player troca para o novo URL. Se não houver principal publicado ou a consulta falhar, o player interrompe o áudio e não usa uma fonte antiga. A atualização depende da conexão: além do intervalo de consulta, cada requisição tem timeout de 15 segundos.
+O botão principal reproduz exatamente o item marcado como **Usar como reprodução principal** no painel. Se o principal for um podcast, os episódios de áudio são reproduzidos na ordem em que aparecem no feed e, ao terminar o último, a fila volta ao primeiro. Um único episódio também se repete. A página HTML nunca é enviada ao player como áudio. Os apps consultam a API antes de iniciar/retomar a reprodução e verificam a configuração a cada 15 segundos. Se o principal mudar enquanto estiver tocando, o player troca para o novo URL. Se não houver principal publicado ou a consulta falhar, o player interrompe o áudio e não usa uma fonte antiga. A atualização depende da conexão: além do intervalo de consulta, cada requisição tem timeout de 15 segundos.
 
 Áudios gravados são reproduzidos pelo ID publicado na API, com validação antes de iniciar/retomar e durante a reprodução. Alterar o endereço de um áudio atualiza o player; excluir ou despublicar o item impede a continuação após a próxima verificação. Os controles da tela bloqueada/notificação também revalidam a publicação antes de retomar. Pedidos musicais permanecem desativados. Páginas públicas abrem externamente. Feeds RSS/Atom são interpretados pelo backend e seus episódios de áudio aparecem no catálogo nativo; o documento XML não é enviado ao player como se fosse um arquivo de áudio.
 
 É necessário compilar e instalar uma nova versão de cada app para receber esta integração. Depois disso, mudanças de conteúdo na API não exigem uma nova versão nas lojas. Caso mude o domínio da API, altere as configurações acima e compile novamente. Nunca coloque a senha administrativa ou o token do banco nos aplicativos.
 
-Para feeds, a consulta tem limite de oito segundos, 2 MB por documento e até 500 episódios. A API recusa fontes HTTP, redes privadas/locais, redirecionamentos para endereços privados e declarações XML de entidades. Feeds precisam estar publicamente acessíveis. Se um feed não puder ser consultado, o endpoint de episódios retorna 502 e os players não retomam uma cópia antiga. Como o áudio é servido diretamente pelo host de origem, o produtor também controla eventuais substituições no arquivo servido pela mesma URL.
+Páginas públicas do AzuraCast nos formatos `/public/{estacao}/podcasts/{id}` e `/public/{estacao}/podcast/{id}` são resolvidas para `/public/{estacao}/podcast/{id}/feed`. A URL cadastrada é preservada; a conversão serve apenas para obter os episódios. Uma página pública de outro tipo continua sendo um link externo e não pode ser principal.
+
+Para feeds, a consulta tem limite de oito segundos e 2 MB por documento, sem truncar a lista de episódios. A API recusa fontes HTTP, redes privadas/locais, redirecionamentos para endereços privados e declarações XML de entidades. Feeds precisam estar publicamente acessíveis. Se um feed não puder ser consultado, o endpoint de episódios retorna 502 e os players não retomam uma cópia antiga. Como o áudio é servido diretamente pelo host de origem, o produtor também controla eventuais substituições no arquivo servido pela mesma URL.
 
 ## API
 
@@ -53,6 +55,7 @@ Sem autenticação, somente conteúdo publicado:
 | --- | --- | --- |
 | GET | `/health` | Saúde do processo |
 | GET | `/api/v1/config` | Configuração, principal e conteúdos publicados |
+| GET | `/api/v1/playback` | Fila principal com `contentId`, `loop` e `items` (IDs, títulos e URLs de áudio) |
 | GET | `/api/v1/nowplaying` | Contrato compatível com os players existentes; 503 sem principal |
 | GET | `/api/v1/podcasts` | Catálogo de áudios gravados e feeds publicados |
 | GET | `/api/v1/podcast/:id/episodes` | Episódios de áudio ou do feed RSS/Atom |

@@ -27,10 +27,10 @@ struct QualityPickerView: View {
                         }
                     }
                 } footer: {
-                    Text(!AzuraCastAPI.isManaged ? "Uma qualidade menor economiza dados móveis. A troca mantém a programação ao vivo." : "Selecione um dos áudios ou transmissões publicados pela rádio.")
+                    Text("O áudio principal é definido no catálogo publicado.")
                 }
             }
-            .navigationTitle(!AzuraCastAPI.isManaged ? "Qualidade do áudio" : "Áudios disponíveis")
+            .navigationTitle("Áudio principal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } } }
         }

@@ -9,7 +9,7 @@ actor AzuraCastAPI {
         case rejected(String)
         var errorDescription: String? {
             switch self {
-            case .invalidResponse: "Não foi possível carregar a configuração publicada da rádio."
+            case .invalidResponse: "Não foi possível carregar a configuração publicada do conteúdo."
             case .rejected(let message): message
             }
         }
@@ -48,6 +48,11 @@ actor AzuraCastAPI {
               model.station.mounts[0].isDefault,
               model.station.mounts[0].url == model.station.listenURL,
               !model.station.requestsEnabled else { throw APIError.invalidResponse }
+        if let playback = model.playback {
+            guard !playback.items.isEmpty,
+                  playback.items.allSatisfy({ $0.url.scheme == "https" && $0.url.host != nil }),
+                  playback.items.first?.url == model.station.listenURL else { throw APIError.invalidResponse }
+        }
         return model
     }
     func requestableSongs(stationID: Int = 2) async throws -> [RequestableSong] { [] }

@@ -1,5 +1,11 @@
 import express from "express";
-import { readPublicFeed, parsePodcastFeed } from "./podcast-feed.js";
+import {
+  readPublicFeed,
+  podcastEpisodes,
+  azuraPodcastFeedURL,
+  isPodcastContent,
+} from "./podcast-feed.js";
+import { resolvePrimaryPlayback } from "./primary-playback.js";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { openDatabase, DatabaseRateLimitStore } from "./database.js";
@@ -39,12 +45,13 @@ const contentSchema = z
       });
     if (
       value.primary &&
-      (!value.published || !["stream", "audio"].includes(value.type))
+      (!value.published ||
+        !["stream", "audio", "podcast_feed"].includes(value.type))
     )
       ctx.addIssue({
         code: "custom",
         message:
-          "A reprodução principal deve ser um áudio ou transmissão publicado.",
+          "A reprodução principal deve ser um áudio, transmissão ou podcast publicado.",
       });
   });
 const settingsSchema = z
@@ -229,7 +236,11 @@ export async function createApp({
     );
   });
   const write = async (req, res) => {
-    const parsed = contentSchema.safeParse(req.body);
+    const input =
+      req.body?.type === "public_page" && azuraPodcastFeedURL(req.body.url)
+        ? { ...req.body, type: "podcast_feed" }
+        : req.body;
+    const parsed = contentSchema.safeParse(input);
     if (!parsed.success)
       return res
         .status(400)
@@ -280,19 +291,31 @@ export async function createApp({
       contents: publicContents,
     });
   });
+  const primaryPlayback = async () => {
+    const config = await settings();
+    const primary = (await list()).find((c) => c.published && c.primary);
+    return resolvePrimaryPlayback(primary, config.stationName, feedReader);
+  };
+  app.get("/api/v1/playback", async (_req, res) => {
+    res.set("Cache-Control", "no-store").json(await primaryPlayback());
+  });
   // Compatibility payloads let the existing native players use managed audio
   // without treating HTML pages or RSS feeds as AVPlayer/ExoPlayer media.
   app.get("/api/v1/nowplaying", async (_req, res) => {
-    const config = await settings(),
-      published = (await list()).filter((c) => c.published);
-    const primary = published.find((c) => c.primary);
     res.set("Cache-Control", "no-store");
+    const playback = await primaryPlayback();
+    const config = await settings();
+    const published = (await list()).filter((c) => c.published);
+    const primary = published.find((c) => String(c.id) === playback.contentId);
     if (!primary)
       return res
         .status(503)
-        .json({ error: "Nenhum áudio principal publicado." });
+        .json({
+          error: "O conteúdo principal foi alterado. Atualize a reprodução.",
+        });
+    const first = playback.items[0];
     const listeners = { total: 0, unique: 0, current: 0 };
-    const playable = [primary];
+    const playable = [{ ...primary, url: first.url, title: first.title }];
     res.json({
       station: {
         id: 1,
@@ -300,7 +323,7 @@ export async function createApp({
         shortcode: config.stationId,
         description: primary.description,
         timezone: "America/Belem",
-        listen_url: primary.url,
+        listen_url: first.url,
         public_player_url:
           published.find((c) => c.type === "public_page")?.url ?? null,
         requests_enabled: false,
@@ -309,7 +332,7 @@ export async function createApp({
           name: c.title,
           url: c.url,
           bitrate: 0,
-          format: c.type === "audio" ? "audio" : "stream",
+          format: c.type === "stream" ? "stream" : "audio",
           listeners,
           is_default: c.primary,
         })),
@@ -331,9 +354,9 @@ export async function createApp({
         streamer: "",
         is_request: false,
         song: {
-          id: String(primary.id),
-          text: primary.title,
-          title: primary.title,
+          id: first.id,
+          text: first.title,
+          title: first.title,
           artist: config.stationName,
           album: "",
           art: null,
@@ -346,20 +369,25 @@ export async function createApp({
       playing_next: null,
       song_history: [],
       is_online: true,
+      playback,
     });
   });
   app.get("/api/v1/podcasts", async (_req, res) =>
     res.set("Cache-Control", "no-store").json(
       (await list())
         .filter(
-          (c) => c.published && ["audio", "podcast_feed"].includes(c.type),
+          (c) => c.published && (c.type === "audio" || isPodcastContent(c)),
         )
         .map((c) => ({
           id: String(c.id),
           title: c.title,
           description_short: c.description,
           art: null,
-          links: { public_feed: c.type === "podcast_feed" ? c.url : null },
+          links: {
+            public_feed: isPodcastContent(c)
+              ? azuraPodcastFeedURL(c.url) || c.url
+              : null,
+          },
         })),
     ),
   );
@@ -368,23 +396,19 @@ export async function createApp({
       (c) =>
         String(c.id) === req.params.id &&
         c.published &&
-        ["audio", "podcast_feed"].includes(c.type),
+        (c.type === "audio" || isPodcastContent(c)),
     );
     if (!content)
       return res.status(404).json({ error: "Áudio não encontrado." });
     res.set("Cache-Control", "no-store");
-    if (content.type === "podcast_feed") {
+    if (isPodcastContent(content)) {
       try {
-        return res.json(
-          parsePodcastFeed(await feedReader(content.url), content),
-        );
+        return res.json(await podcastEpisodes(content, feedReader));
       } catch {
-        return res
-          .status(502)
-          .json({
-            error:
-              "Não foi possível carregar o feed. Confira se o link é um RSS público com episódios de áudio HTTPS.",
-          });
+        return res.status(502).json({
+          error:
+            "Não foi possível carregar o feed. Confira se o link é um RSS público com episódios de áudio HTTPS.",
+        });
       }
     }
     res.json([
@@ -404,6 +428,11 @@ export async function createApp({
     res.status(404).json({ error: "Endpoint não encontrado." }),
   );
   app.use((error, _req, res, _next) => {
+    if (error.code === "PLAYBACK_UNAVAILABLE")
+      return res
+        .set("Cache-Control", "no-store")
+        .status(error.statusCode)
+        .json({ error: error.message });
     res
       .status(
         error.type === "entity.too.large"

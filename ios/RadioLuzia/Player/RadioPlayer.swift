@@ -18,7 +18,7 @@ final class RadioPlayer {
             case .idle: "Pronto para ouvir"
             case .connecting: "Conectando ao áudio…"
             case .playing: "Reproduzindo áudio"
-            case .paused: "Transmissão pausada"
+            case .paused: "Áudio pausado"
             case .failed: "Falha na conexão"
             }
         }
@@ -27,12 +27,14 @@ final class RadioPlayer {
     private(set) var nowPlaying: NowPlaying?
     private(set) var state: PlaybackState = .idle
     private(set) var lastMetadataUpdate = Date()
+    private(set) var primaryEpisodeID: String?
     private(set) var selectedMountID: Int?
     var errorMessage: String?
 
     private let api: AzuraCastAPI
     private let player = AVPlayer()
     private var statusObservation: NSKeyValueObservation?
+    private var endedObservation: NSObjectProtocol?
     private var itemObservation: NSObjectProtocol?
     private var stalledObservation: NSObjectProtocol?
     private var interruptionObservation: NSObjectProtocol?
@@ -51,6 +53,9 @@ final class RadioPlayer {
     private var lastAppliedPlayedAt: Int?
     private var lastAppliedElapsed: Double?
 
+    var primaryPlaybackItem: PrimaryPlaybackItem? { nowPlaying?.playback?.item(currentID: primaryEpisodeID) }
+    var primaryPlaybackTitle: String { primaryPlaybackItem?.title ?? currentTrack?.song.displayTitle ?? "Conteúdo principal" }
+    var primaryPlaybackURL: URL? { primaryPlaybackItem?.url ?? selectedMount?.url ?? nowPlaying?.station.listenURL }
     var currentTrack: PlayingTrack? { nowPlaying?.nowPlaying }
     var isPlaying: Bool { state == .playing || state == .connecting }
     var selectedMount: Mount? {
@@ -148,6 +153,7 @@ final class RadioPlayer {
             activeStreamURL = nil
             nowPlaying = nil
             selectedMountID = nil
+            primaryEpisodeID = nil
             if !Self.isPodcastNowPlaying { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
             state = .failed("Nenhum áudio publicado disponível.")
             if showError { errorMessage = "Não foi possível carregar o áudio publicado na API." }
@@ -187,7 +193,10 @@ final class RadioPlayer {
 
         let previousURL = activeStreamURL
         let songChanged = currentTrack?.song.id != model.nowPlaying.song.id
+        let previousContentID = nowPlaying?.playback?.contentId
+        let previousEpisodeID = primaryEpisodeID
         nowPlaying = model
+        primaryEpisodeID = model.playback?.item(currentID: previousContentID == model.playback?.contentId ? previousEpisodeID : nil)?.id
         lastAppliedPlayedAt = model.nowPlaying.playedAt
         lastAppliedElapsed = model.nowPlaying.elapsed
         if let playedAt = model.nowPlaying.playedAt,
@@ -199,7 +208,7 @@ final class RadioPlayer {
             lastMetadataUpdate = Date()
         }
         selectedMountID = model.station.preferredMount?.id
-        if previousURL != nil && previousURL != model.station.listenURL {
+        if previousURL != nil && previousURL != primaryPlaybackURL {
             player.replaceCurrentItem(with: nil)
             activeStreamURL = nil
             if wantsPlayback && activateAndPlay() { schedulePlaybackRecovery() }
@@ -221,7 +230,7 @@ final class RadioPlayer {
         } catch {
             // A sessão de áudio pode não aceitar a configuração durante a
             // inicialização (especialmente no simulador). Isso não significa
-            // que a rádio falhou: a sessão só precisa estar ativa quando o
+            // que o áudio falhou: a sessão só precisa estar ativa quando o
             // usuário tocar em reproduzir.
         }
         player.automaticallyWaitsToMinimizeStalling = true
@@ -242,9 +251,9 @@ final class RadioPlayer {
             return false
         }
 
-        guard let url = selectedMount?.url ?? nowPlaying?.station.listenURL else {
-            state = .failed("A qualidade do áudio ainda não está disponível.")
-            errorMessage = "Aguarde a rádio carregar para iniciar a reprodução."
+        guard let url = primaryPlaybackURL else {
+            state = .failed("O áudio ainda não está disponível.")
+            errorMessage = "Aguarde o conteúdo carregar para iniciar a reprodução."
             updateNowPlayingCenter()
             return false
         }
@@ -277,14 +286,43 @@ final class RadioPlayer {
         }
     }
 
+    private func advancePrimaryEpisode() {
+        guard wantsPlayback, let playback = nowPlaying?.playback, playback.loop else { return }
+        let contentID = playback.contentId
+        let endedID = primaryEpisodeID
+        playbackRequest?.cancel()
+        playbackVersion += 1
+        let version = playbackVersion
+        playbackRequest = Task { [weak self] in
+            guard let self else { return }
+            defer { if version == playbackVersion { playbackRequest = nil } }
+            guard await refreshMetadata(showError: true), !Task.isCancelled, wantsPlayback,
+                  let refreshed = nowPlaying?.playback, refreshed.contentId == contentID,
+                  let next = refreshed.item(currentID: endedID, advancing: true) else { return }
+            primaryEpisodeID = next.id
+            activeStreamURL = nil
+            player.replaceCurrentItem(with: nil)
+            if activateAndPlay(recreateItemIfNeeded: true) { schedulePlaybackRecovery() }
+        }
+    }
+
     private func configureNotifications() {
+        endedObservation = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
+            guard let item = note.object as? AVPlayerItem else { return }
+            let endedID = ObjectIdentifier(item)
+            Task { @MainActor [weak self] in
+                guard let self, let currentItem = self.player.currentItem, ObjectIdentifier(currentItem) == endedID else { return }
+                self.advancePrimaryEpisode()
+            }
+        }
+
         itemObservation = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemFailedToPlayToEndTime,
             object: nil,
             queue: .main
         ) { [weak self] note in
             let message = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
-                ?? "A transmissão foi interrompida."
+                ?? "A reprodução foi interrompida."
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let wasPlaying = self.isPlaying
@@ -444,8 +482,8 @@ final class RadioPlayer {
         guard !Self.isPodcastNowPlaying else { return }
         guard let track = currentTrack else { return }
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: track.song.displayTitle,
-            MPMediaItemPropertyArtist: track.song.displayArtist,
+            MPMediaItemPropertyTitle: primaryPlaybackTitle,
+            MPMediaItemPropertyArtist: "Luzia Player",
             MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1 : 0,
             MPMediaItemPropertyPlaybackDuration: track.duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed()
@@ -478,6 +516,6 @@ final class RadioPlayer {
 
     private static var isPodcastNowPlaying: Bool {
         (MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyAlbumTitle] as? String)
-            == "Rádio Santa Luzia • Podcasts"
+            == "Luzia Player • Conteúdos"
     }
 }

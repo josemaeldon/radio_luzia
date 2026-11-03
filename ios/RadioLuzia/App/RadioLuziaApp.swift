@@ -18,7 +18,7 @@ struct RadioLuziaApp: App {
 #if DEBUG
         switch ProcessInfo.processInfo.environment["STORE_PREVIEW"] {
         case "details": StationDetailsView()
-        case "requests": SongRequestsView()
+        case "contents": PodcastsView()
         default: PlayerView()
         }
 #else

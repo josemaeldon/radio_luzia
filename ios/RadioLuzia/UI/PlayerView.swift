@@ -4,186 +4,88 @@ import MediaPlayer
 struct PlayerView: View {
     @Environment(RadioPlayer.self) private var player
     @State private var showDetails = false
-    @State private var showRequests = false
-    @State private var showQuality = false
-    @State private var showPodcasts = false
+    @State private var showContents = false
 
     var body: some View {
-        @Bindable var player = player
         NavigationStack {
             ZStack {
-                background
+                LinearGradient(colors: [Color(red: 0.055, green: 0.012, blue: 0.05), RadioTheme.plum, .black], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .ignoresSafeArea()
                 ScrollView {
-                    VStack(spacing: 26) {
-                        stationHeader
-                        nowPlayingSection
-                        if let model = player.nowPlaying {
-                            playbackControls(model)
-                            if let next = model.playingNext { upNext(next) }
-                            history(model.songHistory)
-                        } else {
-                            loadingCard
+                    VStack(spacing: 28) {
+                        ArtworkView(url: player.currentTrack?.song.art, size: min(UIScreen.main.bounds.width - 48, 320))
+                        VStack(spacing: 10) {
+                            Text(player.nowPlaying == nil ? "Seu player de áudio" : player.primaryPlaybackTitle)
+                                .font(.system(.title2, design: .rounded, weight: .bold))
+                                .multilineTextAlignment(.center)
+                            Text(player.nowPlaying == nil ? "Escolha um áudio ou episódio no catálogo." : "Conteúdo principal")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                         }
+                        if let model = player.nowPlaying { playbackControls(model) }
+                        else { unavailableContent }
+                        Button { showContents = true } label: {
+                            Label("Ver conteúdos", systemImage: "headphones")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 24)
                 }
                 .refreshable { await player.refreshMetadata() }
             }
+            .navigationTitle("Luzia Player")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showDetails = true } label: {
-                        Image(systemName: "info.circle")
-                    }
-                    .accessibilityLabel("Detalhes da rádio")
+                    Button { showDetails = true } label: { Image(systemName: "info.circle") }
+                        .accessibilityLabel("Sobre o conteúdo")
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Link(destination: URL(string: "https://instagram.com/santaluziapgm")!) {
-                        InstagramMark()
-                    }
-                    .accessibilityLabel("Instagram da rádio")
-                    Link(destination: URL(string: "https://chat.whatsapp.com/C6FXTTNeetk4gMEX12uwNL?mode=gi_t")!) {
-                        WhatsAppMark()
-                    }
-                    .accessibilityLabel("Grupo da rádio no WhatsApp")
-                    if player.nowPlaying?.station.requestsEnabled == true {
-                        Button { showRequests = true } label: { Image(systemName: "music.note.list") }
-                            .accessibilityLabel("Pedir música")
-                    }
-                    Button { showPodcasts = true } label: { Image(systemName: "mic.fill") }
-                        .accessibilityLabel("Podcasts")
-                    Button { showQuality = true } label: { Image(systemName: "slider.horizontal.3") }
-                        .accessibilityLabel("Qualidade da transmissão")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showContents = true } label: { Image(systemName: "headphones") }
+                        .accessibilityLabel("Abrir conteúdos")
                 }
             }
             .sheet(isPresented: $showDetails) { StationDetailsView() }
-            .sheet(isPresented: $showRequests) { SongRequestsView() }
-            .sheet(isPresented: $showQuality) { QualityPickerView() }
-            .sheet(isPresented: $showPodcasts) { PodcastsView() }
-            .alert("Rádio Santa Luzia", isPresented: Binding(
-                get: { player.errorMessage != nil },
-                set: { if !$0 { player.errorMessage = nil } }
-            )) {
+            .sheet(isPresented: $showContents) { PodcastsView() }
+            .alert("Luzia Player", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
                 Button("OK", role: .cancel) { player.errorMessage = nil }
-            } message: {
-                Text(player.errorMessage ?? "")
-            }
+            } message: { Text(player.errorMessage ?? "") }
         }
         .tint(RadioTheme.gold)
     }
 
-    private var background: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.055, green: 0.012, blue: 0.05), RadioTheme.plum, .black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Circle()
-                .fill(RadioTheme.wine.opacity(0.65))
-                .frame(width: 330, height: 330)
-                .blur(radius: 75)
-                .offset(x: 140, y: -270)
-            Circle()
-                .fill(RadioTheme.gold.opacity(0.12))
-                .frame(width: 280, height: 280)
-                .blur(radius: 90)
-                .offset(x: -170, y: 260)
-        }
-        .ignoresSafeArea()
-    }
-
-    private var stationHeader: some View {
-        VStack(spacing: 8) {
-            Text(player.nowPlaying?.station.name.uppercased() ?? "PARÓQUIA SANTA LUZIA")
-                .font(.caption.weight(.bold))
-                .tracking(2.1)
-                .foregroundStyle(RadioTheme.cream.opacity(0.84))
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(player.nowPlaying?.isOnline == true ? Color.green : Color.orange)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: player.nowPlaying?.isOnline == true ? .green : .orange, radius: 5)
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.64))
-            }
-        }
-    }
-
-    private var statusText: String {
-        if let live = player.nowPlaying?.live, live.isLive {
-            return live.streamerName.isEmpty ? "Programa ao vivo" : "Ao vivo com \(live.streamerName)"
-        }
-        return player.nowPlaying?.isOnline == true ? "No ar agora" : "Verificando sinal…"
-    }
-
-    private var nowPlayingSection: some View {
-        VStack(spacing: 23) {
-            GeometryReader { proxy in
-                let side = min(proxy.size.width, 340)
-                HStack {
-                    Spacer()
-                    ArtworkView(url: player.currentTrack?.song.art, size: side)
-                        .id(player.currentTrack?.song.id)
-                    Spacer()
-                }
-            }
-            .frame(height: min(UIScreen.main.bounds.width - 40, 340))
-
-            VStack(spacing: 7) {
-                Text(player.currentTrack?.song.displayTitle ?? "Rádio Santa Luzia")
-                    .font(.system(.title2, design: .rounded, weight: .bold))
+    private var unavailableContent: some View {
+        VStack(spacing: 12) {
+            if player.state == .idle || player.state == .connecting {
+                ProgressView()
+                Text("Carregando conteúdo…")
+            } else {
+                Label("Nenhum áudio principal disponível", systemImage: "play.slash")
+                Text("Os áudios e podcasts publicados aparecem no catálogo de conteúdos.")
+                    .font(.footnote)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .contentTransition(.numericText())
-                Text(player.currentTrack?.song.displayArtist ?? "A luz que toca você")
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                if let album = player.currentTrack?.song.album, !album.isEmpty {
-                    Text(album)
-                        .font(.caption)
-                        .foregroundStyle(RadioTheme.gold.opacity(0.78))
-                        .lineLimit(1)
-                }
+                    .foregroundStyle(.secondary)
+                Button("Atualizar") { Task { await player.refreshMetadata() } }
             }
-            .animation(.easeInOut, value: player.currentTrack?.song.id)
         }
+        .frame(maxWidth: .infinity)
+        .padding(22)
+        .glassCard()
     }
 
     private func playbackControls(_ model: NowPlaying) -> some View {
-        VStack(spacing: 20) {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                VStack(spacing: 8) {
-                    ProgressView(value: player.progress(at: context.date))
-                        .tint(RadioTheme.gold)
-                        .animation(.linear(duration: 1), value: player.progress(at: context.date))
-                    HStack {
-                        Text(formatTime(player.elapsed(at: context.date)))
-                        Spacer()
-                        Text("-\(formatTime(max((player.currentTrack?.duration ?? 0) - player.elapsed(at: context.date), 0)))")
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.52))
-                }
-            }
-
-            HStack(spacing: 26) {
-                AirPlayButton()
-                    .frame(width: 44, height: 44)
-                    .padding(4)
-                    .roundGlassControl()
+        VStack(spacing: 22) {
+            HStack(spacing: 28) {
+                AirPlayButton().frame(width: 44, height: 44).roundGlassControl()
                     .accessibilityLabel("Escolher saída de áudio")
-
                 Button(action: player.togglePlayback) {
                     ZStack {
                         Circle().fill(RadioTheme.gold)
-                        if player.state == .connecting {
-                            ProgressView().tint(RadioTheme.plum)
-                        } else {
+                        if player.state == .connecting { ProgressView().tint(RadioTheme.plum) }
+                        else {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 30, weight: .bold))
                                 .foregroundStyle(RadioTheme.plum)
@@ -191,135 +93,24 @@ struct PlayerView: View {
                         }
                     }
                     .frame(width: 78, height: 78)
-                    .shadow(color: RadioTheme.gold.opacity(0.28), radius: 18, y: 8)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(player.isPlaying ? "Pausar rádio" : "Ouvir rádio")
-
-                ShareLink(
-                    item: model.station.publicPlayerURL ?? model.station.listenURL,
-                    subject: Text(model.station.name),
-                    message: Text("Ouça \(model.station.name) comigo.")
-                ) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.title3)
-                        .frame(width: 44, height: 44)
-                        .padding(4)
-                        .roundGlassControl()
+                .accessibilityLabel(player.isPlaying ? "Pausar áudio" : "Reproduzir áudio")
+                ShareLink(item: player.primaryPlaybackURL ?? model.station.listenURL, subject: Text(player.primaryPlaybackTitle), message: Text("Ouça este conteúdo no Luzia Player.")) {
+                    Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44).roundGlassControl()
                 }
-                .accessibilityLabel("Compartilhar rádio")
+                .accessibilityLabel("Compartilhar conteúdo")
             }
-
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 Image(systemName: "speaker.fill")
-                    .font(.caption2.weight(.semibold))
-                SystemVolumeSlider()
-                    .frame(height: 26)
-                    .accessibilityLabel("Volume")
+                SystemVolumeSlider().frame(height: 26).accessibilityLabel("Volume")
                 Image(systemName: "speaker.wave.3.fill")
-                    .font(.caption2.weight(.semibold))
             }
-            .foregroundStyle(.white.opacity(0.58))
-            .padding(.horizontal, 3)
-
-            HStack(spacing: 6) {
-                Image(systemName: stateIcon)
-                Text(player.state.label)
-                if let mount = player.selectedMount {
-                    Text("• \(mount.bitrate) kbps")
-                }
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.white.opacity(0.62))
+            .foregroundStyle(.secondary)
+            Text(player.state.label).font(.caption).foregroundStyle(.secondary)
         }
         .padding(22)
         .glassCard()
-    }
-
-    private var stateIcon: String {
-        switch player.state {
-        case .playing: "waveform"
-        case .connecting: "antenna.radiowaves.left.and.right"
-        case .failed: "exclamationmark.triangle"
-        default: "pause.circle"
-        }
-    }
-
-    private func upNext(_ track: PlayingTrack) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("A SEGUIR", systemImage: "forward.fill")
-                .font(.caption.weight(.bold))
-                .tracking(1.5)
-                .foregroundStyle(RadioTheme.gold)
-            TrackRow(track: track, showsTime: false)
-        }
-        .padding(20)
-        .glassCard(cornerRadius: 24)
-    }
-
-    private func history(_ tracks: [PlayingTrack]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("TOCOU RECENTEMENT", systemImage: "clock.arrow.circlepath")
-                .font(.caption.weight(.bold))
-                .tracking(1.4)
-                .foregroundStyle(.white.opacity(0.7))
-            ForEach(Array(tracks.prefix(5).enumerated()), id: \.element.id) { index, track in
-                TrackRow(track: track, showsTime: true)
-                if index < min(tracks.count, 5) - 1 { Divider().overlay(.white.opacity(0.08)) }
-            }
-        }
-        .padding(20)
-        .glassCard(cornerRadius: 24)
-    }
-
-    private var loadingCard: some View {
-        HStack(spacing: 12) {
-            ProgressView().tint(RadioTheme.gold)
-            Text("Sintonizando a programação…").foregroundStyle(.white.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(24)
-        .glassCard()
-    }
-
-    private func formatTime(_ interval: TimeInterval) -> String {
-        guard interval.isFinite else { return "0:00" }
-        let seconds = max(Int(interval), 0)
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-}
-
-private struct InstagramMark: View {
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(RadioTheme.gold, lineWidth: 1.8)
-            RoundedRectangle(cornerRadius: 5)
-                .stroke(.clear, lineWidth: 0)
-            Circle()
-                .stroke(RadioTheme.gold, lineWidth: 1.8)
-                .frame(width: 9, height: 9)
-            Circle()
-                .fill(RadioTheme.gold)
-                .frame(width: 3, height: 3)
-                .offset(x: 6, y: -6)
-        }
-        .frame(width: 24, height: 24)
-    }
-}
-
-private struct WhatsAppMark: View {
-    var body: some View {
-        ZStack {
-            Image(systemName: "message")
-                .font(.system(size: 21, weight: .medium))
-                .foregroundStyle(RadioTheme.gold)
-            Image(systemName: "phone")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(RadioTheme.gold)
-                .rotationEffect(.degrees(-35))
-        }
-        .frame(width: 24, height: 24)
     }
 }
 
@@ -399,37 +190,5 @@ private final class SystemVolumeControl: UIView {
     private func findSlider(in view: UIView) -> UISlider? {
         if let slider = view as? UISlider { return slider }
         return view.subviews.lazy.compactMap(findSlider(in:)).first
-    }
-}
-
-private struct TrackRow: View {
-    let track: PlayingTrack
-    let showsTime: Bool
-
-    var body: some View {
-        HStack(spacing: 13) {
-            AsyncImage(url: track.song.art) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                ZStack {
-                    RadioTheme.wine
-                    Image(systemName: "music.note").foregroundStyle(RadioTheme.gold)
-                }
-            }
-            .frame(width: 52, height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(track.song.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text(track.song.displayArtist).font(.caption).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            if showsTime, let playedAt = track.playedAt {
-                Text(Date(timeIntervalSince1970: TimeInterval(playedAt)), style: .time)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.42))
-            } else if track.isRequest {
-                Image(systemName: "person.wave.2.fill").foregroundStyle(RadioTheme.gold)
-            }
-        }
     }
 }

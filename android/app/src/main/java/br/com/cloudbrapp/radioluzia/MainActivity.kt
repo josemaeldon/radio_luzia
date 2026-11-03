@@ -94,7 +94,7 @@ data class RequestSong(val requestId: String, val title: String, val artist: Str
 data class Podcast(val id: String, val title: String, val art: String?)
 data class PodcastEpisode(val id: String, val title: String, val download: String?)
 
-data class PlaybackStatus(val radio: Boolean = true, val contentId: String? = null, val playing: Boolean = false, val connecting: Boolean = false)
+data class PlaybackStatus(val radio: Boolean = true, val contentId: String? = null, val playing: Boolean = false, val connecting: Boolean = false, val title: String? = null)
 
 class PodcastPlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
@@ -102,6 +102,8 @@ class PodcastPlaybackService : MediaSessionService() {
     private lateinit var notificationManager: NotificationManager
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var radioMode = true
+    private var activePrimaryContentId: String? = null
+    private var loopingPrimary = false
     private var activePodcastId: String? = null
     private var activeContentId: String? = null
     private var validation: Job? = null
@@ -133,13 +135,16 @@ class PodcastPlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) = updateNotification()
             override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updateNotification()
-            override fun onPlaybackStateChanged(playbackState: Int) = updateNotification()
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                updateNotification()
+                if (playbackState == Player.STATE_ENDED && radioMode && loopingPrimary && player.playWhenReady) validatePlayback(resume = true, advancing = true)
+            }
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = updateNotification()
         })
         serviceScope.launch {
             while (true) {
                 delay(15000)
-                if (activeContentId != null && validation?.isActive != true) validatePlayback(resume = player.playWhenReady)
+                if (activeContentId != null && validation?.isActive != true && (player.playbackState != Player.STATE_ENDED || loopingPrimary)) validatePlayback(resume = player.playWhenReady)
             }
         }
     }
@@ -162,12 +167,13 @@ class PodcastPlaybackService : MediaSessionService() {
         updateNotification()
     }
 
-    private fun validatePlayback(resume: Boolean) {
+    private fun validatePlayback(resume: Boolean, advancing: Boolean = false) {
         validation?.cancel()
         val request = ++generation
         val requestedRadio = radioMode
         val requestedId = activeContentId
         val requestedPodcast = activePodcastId
+        val previousPrimary = activePrimaryContentId
         validation = serviceScope.launch {
             try {
                 val config = withContext(Dispatchers.IO) { RadioApi.config() }
@@ -178,7 +184,17 @@ class PodcastPlaybackService : MediaSessionService() {
                     PublishedAudio(item.get("id").toString(), item.getString("title"), item.getString("url"), item.getString("type"), item.optBoolean("published"), item.optBoolean("primary"))
                 }
                 if (!requestedRadio && requestedId == null) error("Episódio não informado.")
-                val content = if (requestedRadio) PublishedAudioSelection.select(contents, config.optJSONObject("primary")?.get("id")?.toString()) else {
+                val content = if (requestedRadio) {
+                    val queue = withContext(Dispatchers.IO) { RadioApi.playback() }
+                    if (request != generation) return@launch
+                    val samePrimary = previousPrimary == queue.contentId
+                    val item = queue.select(if (samePrimary) requestedId else null, advancing && samePrimary) ?: return@launch
+                    activePrimaryContentId = queue.contentId
+                    loopingPrimary = queue.loop
+                    item
+                } else {
+                    loopingPrimary = false
+                    activePrimaryContentId = null
                     require(requestedPodcast != null && contents.any { it.id == requestedPodcast && it.published && it.type in listOf("audio", "podcast_feed") })
                     val episodes = withContext(Dispatchers.IO) { RadioApi.episodes(requestedPodcast) }
                     if (request != generation) return@launch
@@ -202,7 +218,7 @@ class PodcastPlaybackService : MediaSessionService() {
                     }
                     if (player.playbackState == Player.STATE_IDLE) player.prepare()
                 }
-                if (resume) player.play() else player.pause()
+                if (resume) { if (player.playbackState == Player.STATE_ENDED) player.seekTo(0); player.play() } else player.pause()
                 updateNotification()
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) {
@@ -220,7 +236,7 @@ class PodcastPlaybackService : MediaSessionService() {
     }
 
     private fun updateNotification() {
-        playback.value = PlaybackStatus(radioMode, activeContentId, player.isPlaying, player.playWhenReady && player.playbackState == Player.STATE_BUFFERING)
+        playback.value = PlaybackStatus(radioMode, activeContentId, player.isPlaying, player.playWhenReady && player.playbackState == Player.STATE_BUFFERING, player.mediaMetadata.title?.toString())
         if (::notificationManager.isInitialized) notificationManager.notify(NOTIFICATION_ID, buildNotification())
     }
 
@@ -311,6 +327,15 @@ private object RadioApi {
         } finally { connection.disconnect() }
     }
     fun config(): JSONObject = JSONObject(read("/api/v1/config"))
+    fun playback(): PrimaryPlaybackQueue {
+        val json = JSONObject(read("/api/v1/playback"))
+        val items = json.getJSONArray("items")
+        val type = if (json.getString("type") == "stream") "stream" else "audio"
+        return PrimaryPlaybackQueue(json.getString("contentId"), json.getBoolean("loop"), (0 until items.length()).map {
+            val item = items.getJSONObject(it)
+            PublishedAudio(item.getString("id"), item.getString("title"), item.getString("url"), type, true, true)
+        })
+    }
     fun nowPlaying(): JSONObject = JSONObject(read("/api/v1/nowplaying"))
     fun managedLinks(): List<Pair<String, String>> {
         val contents = config().getJSONArray("contents")
@@ -357,7 +382,7 @@ class RadioViewModel : ViewModel() {
         viewModelScope.launch { while (true) { delay(15000); refresh() } }
         viewModelScope.launch {
             PodcastPlaybackService.playback.collect { status ->
-                state = state.copy(isPlaying = status.radio && status.playing, connecting = status.radio && status.connecting)
+                state = state.copy(isPlaying = status.radio && status.playing, connecting = status.radio && status.connecting, current = if (status.radio && status.contentId != null && status.title != null) state.current?.copy(title = status.title) else state.current)
                 podcastPlayingId = if (status.radio) null else status.contentId
                 podcastPlaying = !status.radio && status.playing
             }
@@ -371,7 +396,8 @@ class RadioViewModel : ViewModel() {
                     RadioApi.nowPlaying() to RadioApi.managedLinks()
                 }
                 val parsed = parseState(json, state)
-                state = parsed.copy(station = parsed.station?.copy(managedLinks = links))
+                val playback = PodcastPlaybackService.playback.value
+                state = parsed.copy(station = parsed.station?.copy(managedLinks = links), current = if (playback.radio && playback.contentId != null && playback.title != null) parsed.current?.copy(title = playback.title) else parsed.current)
             } catch (_: Exception) {
                 state = state.copy(station = null, selectedMount = null, online = false, current = null, error = "Não foi possível carregar a configuração da rádio.")
             }

@@ -12,7 +12,7 @@ struct ArtworkView: View {
             case .failure:
                 placeholder
             case .empty:
-                ZStack { placeholder; ProgressView().tint(.white.opacity(0.7)) }
+                ZStack { placeholder; if url != nil { ProgressView().tint(.white.opacity(0.7)) } }
             @unknown default:
                 placeholder
             }
@@ -24,16 +24,16 @@ struct ArtworkView: View {
                 .stroke(.white.opacity(0.16), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.34), radius: 30, y: 18)
-        .accessibilityLabel("Capa da música")
+        .accessibilityLabel("Capa do conteúdo")
     }
 
     private var placeholder: some View {
         ZStack {
             LinearGradient(colors: [RadioTheme.wine, RadioTheme.plum], startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image("DefaultStationArtwork")
-                .resizable()
-                .scaledToFill()
+            Image(systemName: "play.circle.fill")
+                .font(.system(size: size * 0.36, weight: .ultraLight))
+                .foregroundStyle(RadioTheme.gold)
                 .shadow(color: RadioTheme.gold.opacity(0.2), radius: 16)
-        }
     }
+}
 }

@@ -8,9 +8,10 @@ struct NowPlaying: Codable, Sendable {
     let playingNext: PlayingTrack?
     let songHistory: [PlayingTrack]
     let isOnline: Bool
+    let playback: PrimaryPlayback?
 
     enum CodingKeys: String, CodingKey {
-        case station, listeners, live
+        case station, listeners, live, playback
         case nowPlaying = "now_playing"
         case playingNext = "playing_next"
         case songHistory = "song_history"
@@ -114,7 +115,7 @@ struct Song: Codable, Identifiable, Hashable, Sendable {
     let customFields: JSONValue
 
     var displayTitle: String { title.isEmpty ? text : title }
-    var displayArtist: String { artist.isEmpty ? "Paróquia Santa Luzia" : artist }
+    var displayArtist: String { artist.isEmpty ? "Luzia Player" : artist }
 
     enum CodingKeys: String, CodingKey {
         case id, art, text, artist, title, album, genre, isrc, lyrics
@@ -182,3 +183,25 @@ struct PodcastEpisode: Codable, Identifiable, Sendable {
 }
 
 struct PodcastEpisodeLinks: Codable, Sendable { let download: URL? }
+
+struct PrimaryPlaybackItem: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    let title: String
+    let url: URL
+}
+
+struct PrimaryPlayback: Codable, Equatable, Sendable {
+    let contentId: String
+    let title: String
+    let type: String
+    let loop: Bool
+    let items: [PrimaryPlaybackItem]
+
+    func item(currentID: String?, advancing: Bool = false) -> PrimaryPlaybackItem? {
+        guard !items.isEmpty else { return nil }
+        guard let currentID, let index = items.firstIndex(where: { $0.id == currentID }) else { return items.first }
+        if !advancing { return items[index] }
+        guard loop else { return nil }
+        return items[(index + 1) % items.count]
+    }
+}

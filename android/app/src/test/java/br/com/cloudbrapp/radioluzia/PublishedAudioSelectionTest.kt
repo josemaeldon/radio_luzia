@@ -34,4 +34,16 @@ class PublishedAudioSelectionTest {
         }
         assertThrows(IllegalArgumentException::class.java) { PublishedAudioSelection.select(listOf(original.copy(url = "http://audio.example.com/a.mp3")), "1") }
     }
+    @Test fun primaryPodcastQueueRepeatsAllEpisodesAndKeepsCurrentIdentity() {
+        val first = original.copy(id = "one")
+        val second = original.copy(id = "two", url = "https://example.com/two.mp3")
+        val queue = PrimaryPlaybackQueue("10", true, listOf(first, second))
+        assertEquals("one", queue.select(null)?.id)
+        assertEquals("two", queue.select("two")?.id)
+        assertEquals("two", queue.select("one", true)?.id)
+        assertEquals("one", queue.select("two", true)?.id)
+        assertEquals("one", queue.select("removed", true)?.id)
+        assertEquals("one", PrimaryPlaybackQueue("10", true, listOf(first)).select("one", true)?.id)
+        assertEquals(null, PrimaryPlaybackQueue("10", false, listOf(first)).select("one", true))
+    }
 }

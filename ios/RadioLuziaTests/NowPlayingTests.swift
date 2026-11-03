@@ -103,3 +103,20 @@ extension NowPlayingTests {
         catch { XCTAssertTrue(error is AzuraCastAPI.APIError) }
     }
 }
+
+extension NowPlayingTests {
+    func testPrimaryPodcastQueueRepeatsInOrderAndPreservesCurrentEpisode() throws {
+        let first = PrimaryPlaybackItem(id: "one", title: "Primeiro", url: URL(string: "https://example.com/one.mp3")!)
+        let second = PrimaryPlaybackItem(id: "two", title: "Segundo", url: URL(string: "https://example.com/two.mp3")!)
+        let queue = PrimaryPlayback(contentId: "10", title: "Podcast", type: "podcast_feed", loop: true, items: [first, second])
+        XCTAssertEqual(queue.item(currentID: nil)?.id, "one")
+        XCTAssertEqual(queue.item(currentID: "two")?.id, "two")
+        XCTAssertEqual(queue.item(currentID: "one", advancing: true)?.id, "two")
+        XCTAssertEqual(queue.item(currentID: "two", advancing: true)?.id, "one")
+        XCTAssertEqual(queue.item(currentID: "removed", advancing: true)?.id, "one")
+        let single = PrimaryPlayback(contentId: "10", title: "Podcast", type: "podcast_feed", loop: true, items: [first])
+        XCTAssertEqual(single.item(currentID: "one", advancing: true)?.id, "one")
+        let audio = PrimaryPlayback(contentId: "10", title: "Áudio", type: "audio", loop: false, items: [first])
+        XCTAssertNil(audio.item(currentID: "one", advancing: true))
+    }
+}

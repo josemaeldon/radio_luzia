@@ -7,6 +7,7 @@ Aplicativos nativos iOS (SwiftUI) e Android (Kotlin/Compose) para a **Paróquia 
 - Reprodução do conteúdo principal publicado em `https://radio-luzia.vercel.app`
 - Transmissões e áudios gravados hospedados no AzuraCast ou em outro servidor HTTPS
 - Catálogo nativo de podcasts com episódios de feeds RSS/Atom publicados no painel
+- Podcasts como conteúdo principal, com reprodução sequencial de todos os episódios em loop
 - Atualização da configuração a cada 15 segundos e revalidação ao iniciar/retomar
 - Troca do áudio em execução quando seu endereço é alterado na API
 - Interrupção de conteúdos removidos/despublicados ou cuja publicação não possa ser verificada
@@ -18,7 +19,7 @@ A API é a única fonte de reprodução. Os apps não retomam a transmissão ant
 
 ## Estrutura
 
-- `ios/`: app iOS nativo em SwiftUI, projeto Xcode e testes.
+- `ios/`: Luzia Player, app iOS nativo em SwiftUI com foco na reprodução dos conteúdos da API, projeto Xcode e testes.
 - `android/`: app Android nativo em Kotlin + Jetpack Compose, com a mesma identidade visual e recursos principais.
 
 ## Abrir

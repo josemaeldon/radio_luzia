@@ -1,37 +1,25 @@
-# Checklist de distribuição — Rádio Santa Luzia
+# Distribuição — Luzia Player
 
-## Pronto no projeto
+## Versão atual do código
 
-- [x] Nome de exibição “Rádio Santa Luzia”
-- [x] Bundle ID `br.com.cloudbrapp.radioluzia`
-- [x] Versão 1.0, build 2
-- [x] Equipe de assinatura `DHLAYBVJ2Z`
-- [x] Ícone 1024 × 1024 sem transparência
-- [x] Áudio em segundo plano
-- [x] Categoria Música e declaração de criptografia
-- [x] Manifesto de privacidade
-- [x] Metadados pt-BR e notas para revisão
-- [x] Três screenshots de iPhone e três de iPad
-- [x] Archive Release 1.0 (2) validado
-- [x] IPA App Store assinado com certificado Apple Distribution
+- Nome de exibição: Luzia Player
+- Identificador do aplicativo: `br.com.cloudbrapp.radioluzia`
+- Apresentação: player nativo de conteúdos publicados na API
+- Catálogo: áudios e episódios de podcasts
+- Recursos: segundo plano, controles de mídia, AirPlay e volume do dispositivo
+- Metadados preparados: `Metadata/pt-BR.md`
 
-## Artefatos para envio
+## Antes de enviar esta versão
 
-- Archive: `AppStore/Archive/RadioSantaLuzia-1.0-2.xcarchive`
-- IPA: `AppStore/Export/1.0-2/RadioLuzia.ipa`
-- Screenshots iPhone: `AppStore/Screenshots/iPhone`
-- Screenshots iPad: `AppStore/Screenshots/iPad`
-- Metadados pt-BR: `AppStore/Metadata/pt-BR.md`
+- [ ] Compilar e testar a versão atual em iPhone e iPad.
+- [ ] Confirmar que a API e os conteúdos de revisão estão acessíveis publicamente.
+- [ ] Conferir título, descrição e imagens dos conteúdos publicados na API.
+- [ ] Gerar novas capturas de tela da interface atual.
+- [ ] Gerar um novo archive e exportar a versão atual.
+- [ ] Atualizar nome, descrição, palavras-chave e notas no App Store Connect.
+- [ ] Informar URLs válidas de suporte e privacidade.
+- [ ] Preencher a classificação etária conforme o conteúdo efetivamente publicado.
+- [ ] Apresentar as autorizações de conteúdo que forem aplicáveis.
+- [ ] Selecionar o novo build e enviar para revisão.
 
-## Antes do envio no App Store Connect
-
-- [ ] Criar o registro do app com o Bundle ID acima
-- [ ] Publicar `docs/privacy.html` e `docs/support.html` em URLs HTTPS públicas
-- [ ] Informar as URLs públicas de privacidade e suporte
-- [ ] Responder ao questionário de classificação etária (sugestão: 4+)
-- [ ] Confirmar contratos, dados bancários e fiscais da organização
-- [x] Contato de suporte: `admin@cloudbr.app`
-- [ ] Fazer upload do arquivo exportado pelo Xcode/Transporter
-- [ ] Selecionar o build e enviar para revisão
-
-O upload e o envio para revisão permanecem manuais porque publicam conteúdo na conta da organização.
+Os archives, IPAs e screenshots guardados anteriormente representam versões antigas. Não os use para descrever ou enviar esta interface. A aprovação será determinada pela revisão da Apple.

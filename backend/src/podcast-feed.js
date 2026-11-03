@@ -127,10 +127,10 @@ export function parsePodcastFeed(xml, content) {
   });
   const parsed = parser.parse(xml);
   const channel = parsed.rss?.channel ?? parsed.feed;
-  if (!channel) throw new Error("Use um feed RSS ou Atom válido.");
+  if (channel === undefined || channel === null) throw new Error("Use um feed RSS ou Atom válido.");
   const entries = channel.item ?? channel.entry ?? [];
   const seen = new Set();
-  return entries.slice(0, 500).flatMap((item) => {
+  return entries.flatMap((item) => {
     const enclosure =
       (item.enclosure ?? []).find(
         (e) => !e["@_type"] || e["@_type"].startsWith("audio/"),
@@ -164,5 +164,37 @@ export function parsePodcastFeed(xml, content) {
         links: { download: url },
       },
     ];
+  });
+}
+
+// AzuraCast's public detail page is not audio. Its public RSS endpoint uses
+// singular `podcast`, even when the SPA detail route uses `podcasts`.
+export function azuraPodcastFeedURL(value) {
+  let url;
+  try {
+    url = publicURL(value);
+  } catch {
+    return null;
+  }
+  const match = url.pathname.match(
+    /^(.*\/public\/)([a-zA-Z0-9_-]+)\/podcasts?\/([a-zA-Z0-9_-]+)(?:\/feed)?\/?$/,
+  );
+  if (!match) return null;
+  url.pathname = `${match[1]}${match[2]}/podcast/${match[3]}/feed`;
+  url.hash = "";
+  return url.href;
+}
+export function isPodcastContent(content) {
+  return (
+    content.type === "podcast_feed" ||
+    (content.type === "public_page" &&
+      azuraPodcastFeedURL(content.url) !== null)
+  );
+}
+export async function podcastEpisodes(content, feedReader = readPublicFeed) {
+  const feedUrl = azuraPodcastFeedURL(content.url) || content.url;
+  return parsePodcastFeed(await feedReader(feedUrl), {
+    ...content,
+    url: feedUrl,
   });
 }

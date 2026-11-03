@@ -1,57 +1,54 @@
-# Rádio Santa Luzia — App Store Connect
+# Luzia Player — App Store Connect
 
 ## Informações do app
 
-- Nome: Rádio Santa Luzia
-- Subtítulo: Fé e música ao vivo
-- Categoria principal: Música
-- Categoria secundária: Estilo de vida
-- Classificação etária sugerida: 4+
+- Nome: Luzia Player
+- Subtítulo: Áudios e podcasts em um lugar
+- Categoria sugerida: Entretenimento
 - Copyright: © 2026 Paróquia Santa Luzia
 
 ## Texto promocional
 
-Ouça a Rádio Santa Luzia ao vivo, acompanhe cada música em tempo real e participe da programação diretamente pelo app.
+Ouça os áudios e episódios publicados no catálogo, com reprodução em segundo plano, AirPlay e controles na tela bloqueada.
 
 ## Descrição
 
-A Rádio Santa Luzia agora está ainda mais perto de você.
+Luzia Player reúne os conteúdos de áudio disponíveis no catálogo administrado pelo responsável pelo aplicativo.
 
-Ouça nossa programação ao vivo com uma experiência elegante, rápida e feita especialmente para iPhone e iPad. Veja a capa, o título, o artista, o álbum, o progresso da música e o histórico das faixas tocadas em tempo real.
+Reproduza o conteúdo principal ou escolha um episódio na área Conteúdos. O catálogo é atualizado pela API, com links de áudio e episódios de podcast publicados pelo administrador. Quando um podcast é definido como conteúdo principal, seus episódios são reproduzidos em sequência e a lista se repete ao terminar.
 
 Recursos:
 
-• transmissão ao vivo com reprodução em segundo plano;
-• metadados e capas atualizados em tempo real;
-• barra de progresso da música atual;
-• volume do sistema sincronizado com os botões físicos;
-• histórico das músicas tocadas;
-• pedidos musicais pelo próprio app;
-• seleção da qualidade da transmissão;
-• suporte a AirPlay e controles da tela bloqueada.
+• reprodução de áudios e episódios de podcast;
+• catálogo atualizado remotamente;
+• reprodução em segundo plano;
+• volume sincronizado com os controles do dispositivo;
+• suporte a AirPlay e controles na tela bloqueada;
+• compartilhamento do link do conteúdo principal;
+• acesso aos links públicos publicados no catálogo.
 
-Rádio Santa Luzia — música, fé e comunidade sempre com você.
+O acesso aos conteúdos não exige conta do ouvinte. A disponibilidade dos áudios depende da publicação no catálogo e da conexão com a internet.
 
 ## Palavras-chave
 
-rádio,católica,fé,música,santa luzia,oração,paróquia,liturgia,evangelização,ao vivo
+player,áudio,podcast,episódios,conteúdo,luzia,airplay
 
 ## Notas para revisão
 
-O app não exige conta ou autenticação. Ao abrir, aguarde alguns segundos para o carregamento dos metadados públicos da estação. A reprodução começa apenas quando a pessoa toca no botão Play. O recurso “Pedir música” usa o catálogo público da própria Rádio Santa Luzia, fornecido pelo AzuraCast.
+O aplicativo é um player nativo de áudios e podcasts publicados em uma API administrativa. A reprodução utiliza os links de áudio retornados pela API; feeds RSS/Atom são interpretados pelo backend para fornecer os episódios ao player nativo. Links de páginas públicas abrem externamente.
 
-Fluxo sugerido para revisão:
+Não há login para ouvintes. O acesso administrativo é separado do aplicativo. O conteúdo principal e o catálogo dependem das publicações do administrador; o aplicativo não reproduz uma fonte alternativa quando a publicação deixa de estar disponível.
 
-1. Abra o app e aguarde o status “No ar agora”.
-2. Toque em Play para iniciar a transmissão.
-3. Toque no ícone de lista para abrir os pedidos musicais.
-4. Toque no ícone de informações para consultar os detalhes da estação.
+Fluxo para revisão:
 
-## URLs a publicar
+1. Abra o aplicativo e toque em Reproduzir áudio, se houver conteúdo principal publicado.
+2. Abra Ver conteúdos, selecione um item e depois um episódio para iniciar a reprodução.
+3. Verifique os controles de mídia em segundo plano, na tela bloqueada e por AirPlay.
+4. Abra Sobre o conteúdo para consultar as informações e os links publicados.
 
-- Política de privacidade: publique `docs/privacy.html` e informe a URL pública no App Store Connect.
-- Suporte: publique `docs/support.html` e informe a URL pública no App Store Connect.
+Antes do envio, confirme a disponibilidade dos conteúdos de revisão e forneça à Apple a documentação de direitos de uso que for aplicável. O nome e a apresentação do aplicativo não substituem essa documentação.
 
-## Contato
+## URLs e contato
 
-- Suporte e contato: admin@cloudbr.app
+- Preencha no App Store Connect URLs HTTPS públicas e válidas para suporte e política de privacidade.
+- Contato de suporte: admin@cloudbr.app

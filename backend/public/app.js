@@ -48,13 +48,18 @@ function resetEditor() {
   updateType();
 }
 function updateType() {
-  const link = ["public_page", "podcast_feed"].includes($("#type").value);
+  const podcastPage =
+    /\/public\/[a-zA-Z0-9_-]+\/podcasts?\/[a-zA-Z0-9_-]+(?:\/feed)?\/?$/.test(
+      $("#url").value.split(/[?#]/)[0],
+    );
+  const link = $("#type").value === "public_page" && !podcastPage;
   const primary = $("#content-form").elements.primary;
   primary.disabled = link;
   if (link) primary.checked = false;
   $("#url-help").textContent =
-    $("#type").value === "podcast_feed"
-      ? "Use o endereço do feed RSS, não a página de apresentação do podcast."
+    $("#type").value === "podcast_feed" ||
+    (podcastPage && $("#type").value === "public_page")
+      ? "Use o RSS ou a página pública do podcast no AzuraCast. Como principal, os episódios serão reproduzidos em sequência e em loop."
       : link
         ? "Esta página será publicada como link, sem reprodução de áudio."
         : "Use o endereço direto do áudio ou da transmissão.";
@@ -218,6 +223,7 @@ $("#settings-form").onsubmit = async (event) => {
   }
 };
 $("#type").onchange = updateType;
+$("#url").oninput = updateType;
 $("#cancel").onclick = resetEditor;
 $("#add").onclick = () => {
   resetEditor();

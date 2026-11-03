@@ -3,88 +3,6 @@ import AVFoundation
 import Observation
 import MediaPlayer
 
-struct SongRequestsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var songs: [RequestableSong] = []
-    @State private var searchText = ""
-    @State private var isLoading = true
-    @State private var sendingID: String?
-    @State private var alertMessage: String?
-    @State private var visibleCount = 30
-
-    private var filteredSongs: [RequestableSong] {
-        guard !searchText.isEmpty else { return songs }
-        return songs.filter {
-            $0.song.displayTitle.localizedStandardContains(searchText)
-                || $0.song.displayArtist.localizedStandardContains(searchText)
-                || $0.song.album.localizedStandardContains(searchText)
-        }
-    }
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView("Carregando repertório…")
-                } else if songs.isEmpty {
-                    ContentUnavailableView("Pedidos indisponíveis", systemImage: "music.note.slash", description: Text("Tente novamente mais tarde."))
-                } else {
-                    List(Array(filteredSongs.prefix(visibleCount))) { item in
-                        Button { Task { await request(item) } } label: {
-                            HStack(spacing: 12) {
-                                AsyncImage(url: item.song.art) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    Image(systemName: "music.note").frame(maxWidth: .infinity, maxHeight: .infinity).background(RadioTheme.wine)
-                                }
-                                .frame(width: 48, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.song.displayTitle).foregroundStyle(.primary).lineLimit(1)
-                                    Text(item.song.displayArtist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer()
-                                if sendingID == item.id { ProgressView() }
-                                else { Image(systemName: "plus.circle").foregroundStyle(RadioTheme.gold) }
-                            }
-                        }
-                        .disabled(sendingID != nil)
-                        .onAppear { if item.id == filteredSongs.dropFirst(max(visibleCount - 5, 0)).first?.id { visibleCount += 30 } }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-            .navigationTitle("Peça sua música")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "Música, artista ou álbum")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } } }
-            .task { await loadSongs() }
-            .alert("Pedido musical", isPresented: Binding(
-                get: { alertMessage != nil },
-                set: { if !$0 { alertMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { alertMessage = nil }
-            } message: { Text(alertMessage ?? "") }
-        }
-        .preferredColorScheme(.dark)
-    }
-
-    private func loadSongs() async {
-        defer { isLoading = false }
-        songs = (try? await AzuraCastAPI.shared.requestableSongs()) ?? []
-    }
-
-    private func request(_ item: RequestableSong) async {
-        sendingID = item.id
-        defer { sendingID = nil }
-        do {
-            alertMessage = try await AzuraCastAPI.shared.requestSong(item.requestID)
-        } catch {
-            alertMessage = error.localizedDescription
-        }
-    }
-}
-
 struct PodcastsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(RadioPlayer.self) private var radioPlayer
@@ -106,11 +24,11 @@ struct PodcastsView: View {
                             Label(episode.title, systemImage: player.url == episode.links.download && player.isPlaying ? "pause.circle.fill" : "play.circle")
                         }
                     }
-                } else if podcasts.isEmpty { ContentUnavailableView("Podcasts indisponíveis", systemImage: "mic.slash", description: Text("Nenhum podcast publicado no momento.")) }
+                } else if podcasts.isEmpty { ContentUnavailableView("Nenhum conteúdo publicado", systemImage: "mic.slash", description: Text("Os áudios e episódios publicados aparecerão aqui.")) }
                 else { List(podcasts) { podcast in Button { selected = podcast; Task { episodes = (try? await AzuraCastAPI.shared.podcastEpisodes(podcast.id)) ?? [] } } label: { Label(podcast.title, systemImage: "mic.fill") } } }
             }
-            .navigationTitle(selected?.title ?? "Podcasts")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }; if selected != nil { ToolbarItem(placement: .topBarLeading) { Button("Podcasts") { selected = nil } } } }
+            .navigationTitle(selected?.title ?? "Conteúdos")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } }; if selected != nil { ToolbarItem(placement: .topBarLeading) { Button("Conteúdos") { selected = nil } } } }
             .task {
                 while !Task.isCancelled {
                     podcasts = (try? await AzuraCastAPI.shared.podcasts()) ?? []
@@ -125,7 +43,7 @@ struct PodcastsView: View {
 }
 
 @Observable private final class PodcastAudioPlayer: @unchecked Sendable {
-    private static let nowPlayingAlbum = "Rádio Santa Luzia • Podcasts"
+    private static let nowPlayingAlbum = "Luzia Player • Conteúdos"
     private var avPlayer: AVPlayer?
     private var timeObserver: Any?
     private var itemStatusObservation: NSKeyValueObservation?
@@ -350,7 +268,7 @@ struct PodcastsView: View {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyAlbumTitle: Self.nowPlayingAlbum,
-            MPMediaItemPropertyAlbumArtist: "Rádio Santa Luzia",
+            MPMediaItemPropertyAlbumArtist: "Luzia Player",
             MPMediaItemPropertyMediaType: NSNumber(value: MPMediaType.podcast.rawValue),
             MPNowPlayingInfoPropertyExternalContentIdentifier: url?.absoluteString ?? "",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,

@@ -123,3 +123,113 @@ test("published feeds populate the native catalog and stop resolving after unpub
     0,
   );
 });
+
+test("AzuraCast public podcast pages resolve to RSS feeds", async () => {
+  const { azuraPodcastFeedURL } = await import("../src/podcast-feed.js");
+  for (const part of ["podcast", "podcasts"]) {
+    assert.equal(
+      azuraPodcastFeedURL(
+        `https://example.com/public/station/${part}/podcast-id`,
+      ),
+      "https://example.com/public/station/podcast/podcast-id/feed",
+    );
+  }
+  assert.equal(
+    azuraPodcastFeedURL(
+      "https://example.com/azura/public/2/podcasts/id/?lang=pt#episodes",
+    ),
+    "https://example.com/azura/public/2/podcast/id/feed?lang=pt",
+  );
+  assert.equal(azuraPodcastFeedURL("https://example.com/public/station"), null);
+});
+
+test("podcast pages can be primary, expose an audio-only circular queue and stop when empty", async (t) => {
+  const queried = [];
+  let xml =
+    '<rss><channel><item><guid>one</guid><title>Primeiro</title><enclosure url="https://example.com/one.mp3" type="audio/mpeg"/></item><item><guid>two</guid><title>Segundo</title><enclosure url="https://example.com/two.mp3" type="audio/mpeg"/></item></channel></rss>';
+  const { app, db } = await createApp({
+    databasePath: ":memory:",
+    adminPassword: "primary-podcast-test",
+    feedReader: async (url) => {
+      queried.push(url);
+      return xml;
+    },
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
+  t.after(async () => {
+    await new Promise((r) => server.close(r));
+    db.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = await fetch(base + "/api/admin/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "primary-podcast-test" }),
+  });
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: login.headers.get("set-cookie").split(";")[0],
+    "X-CSRF-Token": (await login.json()).csrf,
+  };
+  const content = {
+    title: "Série",
+    type: "public_page",
+    url: "https://example.com/public/station/podcasts/podcast-id",
+    description: "",
+    published: true,
+    primary: true,
+    rightsConfirmed: true,
+  };
+  const saved = await fetch(base + "/api/admin/contents", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(content),
+  });
+  assert.equal(saved.status, 201);
+  const row = await saved.json();
+  assert.equal(row.type, "podcast_feed");
+  assert.equal(row.primary, true);
+  const queueResponse = await fetch(base + "/api/v1/playback");
+  assert.equal(queueResponse.status, 200);
+  const queue = await queueResponse.json();
+  assert.equal(queue.loop, true);
+  assert.equal(queue.contentId, String(row.id));
+  assert.deepEqual(
+    queue.items.map((item) => item.url),
+    ["https://example.com/one.mp3", "https://example.com/two.mp3"],
+  );
+  assert.ok(
+    queried.every(
+      (url) =>
+        url === "https://example.com/public/station/podcast/podcast-id/feed",
+    ),
+  );
+  const playing = await (await fetch(base + "/api/v1/nowplaying")).json();
+  assert.equal(playing.station.listen_url, queue.items[0].url);
+  assert.deepEqual(playing.playback, queue);
+  assert.equal(
+    (await (await fetch(base + `/api/v1/podcast/${row.id}/episodes`)).json())
+      .length,
+    2,
+  );
+  xml = "<rss><channel/></rss>";
+  assert.equal((await fetch(base + "/api/v1/playback")).status, 503);
+  assert.equal((await fetch(base + "/api/v1/nowplaying")).status, 503);
+  await fetch(base + `/api/admin/contents/${row.id}`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({
+      ...content,
+      type: "podcast_feed",
+      primary: false,
+      published: false,
+    }),
+  });
+  assert.equal((await fetch(base + "/api/v1/playback")).status, 503);
+});
+
+test('the playback feed does not silently truncate published episodes', () => {
+  const entries=Array.from({length:501},(_,i)=>`<item><guid>${i}</guid><title>Episódio ${i}</title><enclosure url="https://example.com/${i}.mp3" type="audio/mpeg"/></item>`).join('');
+  assert.equal(parsePodcastFeed(`<rss><channel>${entries}</channel></rss>`,content).length,501);
+});
