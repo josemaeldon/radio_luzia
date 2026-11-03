@@ -11,6 +11,7 @@ import { rateLimit } from "express-rate-limit";
 import { openDatabase, DatabaseRateLimitStore } from "./database.js";
 import {
   randomBytes,
+  randomUUID,
   scryptSync,
   timingSafeEqual,
   createHash,
@@ -79,6 +80,8 @@ export async function createApp({
   secureCookies = false,
   trustProxy = false,
   feedReader = readPublicFeed,
+  storageInfo,
+  expectedDatabaseId,
 } = {}) {
   if (!adminPassword || adminPassword.length < 10)
     throw new Error("Defina ADMIN_PASSWORD com pelo menos 10 caracteres.");
@@ -91,7 +94,26 @@ export async function createApp({
     CREATE UNIQUE INDEX IF NOT EXISTS single_primary ON contents("primary") WHERE "primary" = 1;
     CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, resetAt INTEGER NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, resetAt INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS storage_metadata (id INTEGER PRIMARY KEY CHECK(id=1), instanceId TEXT NOT NULL, createdAt TEXT NOT NULL);`);
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO storage_metadata (id,instanceId,createdAt) VALUES (1,?,?)",
+    )
+    .run(randomUUID(), new Date().toISOString());
+  const storageIdentity = await db
+    .prepare("SELECT instanceId,createdAt FROM storage_metadata WHERE id=1")
+    .get();
+  if (expectedDatabaseId && expectedDatabaseId !== storageIdentity.instanceId) {
+    db.close();
+    const issues = [
+      "O banco conectado não corresponde a EXPECTED_DATABASE_ID. Confira o banco persistente usado pelo deployment anterior.",
+    ];
+    throw Object.assign(new Error(issues[0]), {
+      code: "BACKEND_CONFIGURATION_INVALID",
+      issues,
+    });
+  }
   await db.prepare("INSERT OR IGNORE INTO settings VALUES (1, ?)").run(
     JSON.stringify({
       stationName: "Rádio Santa Luzia",
@@ -266,6 +288,18 @@ export async function createApp({
       return res.status(404).json({ error: "Conteúdo não encontrado." });
     res.sendStatus(204);
   });
+  app.get("/api/admin/storage", auth, async (_req, res) => {
+    const counts = await db
+      .prepare("SELECT COUNT(*) AS contents FROM contents")
+      .get();
+    res.json({
+      ...storageInfo,
+      mode: storageInfo?.mode || (databaseUrl ? "remote" : "local"),
+      databaseId: storageIdentity.instanceId,
+      createdAt: storageIdentity.createdAt,
+      contents: Number(counts.contents),
+    });
+  });
   app.get("/api/admin/settings", auth, async (_req, res) =>
     res.json(await settings()),
   );
@@ -308,11 +342,9 @@ export async function createApp({
     const published = (await list()).filter((c) => c.published);
     const primary = published.find((c) => String(c.id) === playback.contentId);
     if (!primary)
-      return res
-        .status(503)
-        .json({
-          error: "O conteúdo principal foi alterado. Atualize a reprodução.",
-        });
+      return res.status(503).json({
+        error: "O conteúdo principal foi alterado. Atualize a reprodução.",
+      });
     const first = playback.items[0];
     const listeners = { total: 0, unique: 0, current: 0 };
     const playable = [{ ...primary, url: first.url, title: first.title }];

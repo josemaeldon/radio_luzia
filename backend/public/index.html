@@ -182,6 +182,18 @@
             <button type="submit">Salvar configuração</button>
           </form>
           <section class="integration">
+            <h2>Banco de dados</h2>
+            <p id="storage-status">Consultando o armazenamento…</p>
+            <p>Identificador permanente do banco:</p>
+            <code id="storage-identity"></code>
+            <p>
+              O identificador deve permanecer o mesmo após um novo deploy.
+              Conteúdos e configurações ficam no banco, separados da versão do
+              aplicativo.
+            </p>
+            <p id="storage-warning" class="notice" role="status" hidden></p>
+          </section>
+          <section class="integration">
             <h2>Integração dos aplicativos</h2>
             <p>Endpoint público de configuração:</p>
             <code id="endpoint"></code>

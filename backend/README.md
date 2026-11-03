@@ -122,9 +122,23 @@ Na Vercel, **não use `DATABASE_PATH` nem arquivos em `/tmp` como banco persiste
 - O painel estático abre mesmo quando a API não consegue inicializar; o login informa o diagnóstico. `/health` continua retornando 503 enquanto o backend não estiver funcional.
 - Se um token ou senha real tiver sido commitado, substitua-o no serviço e configure o novo valor na Vercel. Limpar o arquivo atual não remove os valores de commits antigos. `.env` é local e ignorado pelo Git; `.env.example` deve conter apenas campos vazios ou exemplos sem credenciais.
 
+## Manter dados entre deployments
+
+O ponto de entrada da Vercel exige banco remoto mesmo quando as variáveis de identificação da plataforma não estão expostas. Em produção não há retorno automático para arquivo SQLite ou memória. A inicialização apenas cria tabelas ausentes e insere configurações iniciais se ainda não existirem; ela não apaga nem substitui conteúdos existentes.
+
+Use o mesmo `TURSO_DATABASE_URL` e seu `TURSO_AUTH_TOKEN` em todos os deployments de **Production**. Se preferir os aliases, use o par `DATABASE_URL` / `DATABASE_AUTH_TOKEN`. Não mantenha dois pares apontando para bancos diferentes: a aplicação agora recusa essa configuração ambígua. Preview e Production podem ter bancos diferentes, conforme as variáveis de cada ambiente; um cadastro feito no preview não aparece automaticamente na produção.
+
+Em **Configuração → Banco de dados**, confira o modo remoto e o identificador permanente do banco. Esse identificador é salvo no próprio banco, não no deployment, e deve permanecer igual após publicar uma nova versão. O endpoint autenticado `/api/admin/storage` também retorna o identificador e a contagem de conteúdos, sem expor URL ou token.
+
+Para impedir que um deploy abra acidentalmente um banco novo, copie o identificador exibido no painel para a variável opcional `EXPECTED_DATABASE_ID` em Production e faça redeploy. Se a conexão passar a apontar para outro banco, a API recusará a inicialização em vez de apresentar um cadastro vazio. Para uma migração intencional, verifique e atualize essa variável explicitamente.
+
+Se os conteúdos já desapareceram da tela, confira primeiro se o banco e o ambiente são os mesmos do deployment anterior. Este código não recupera registros de um banco diferente nem desfaz exclusões; uma recuperação exige o banco anterior ou um backup.
+
+No iOS, a seleção de um episódio no catálogo passa a usar o mesmo player mantido pelo aplicativo. Fechar o catálogo ou bloquear a tela não destrói o player. A seleção continua ativa e a publicação é verificada pelo endpoint de episódios, sem depender da existência de um conteúdo principal. Os controles da tela bloqueada usam a mesma sessão de áudio. A continuidade após encerramento forçado do aplicativo não é garantida pelo sistema.
+
 ## Outras hospedagens Node
 
-Para servidor próprio, execute Node atrás de um proxy reverso com TLS. Use `NODE_ENV=production` para cookies Secure. Configure `PORT`, `HOST` e, se usar SQLite local, `DATABASE_PATH` em volume persistente. Para proxy reverso local, use `TRUST_PROXY=loopback`; com proxy em outra máquina, informe apenas os IPs/sub-redes confiáveis. Na Vercel, o proxy e os cookies Secure são configurados automaticamente.
+Para servidor próprio, execute Node atrás de um proxy reverso com TLS. Use `NODE_ENV=production` e configure o banco remoto; esse modo exige persistência remota e ativa cookies Secure. Configure `PORT` e `HOST`. SQLite local com `DATABASE_PATH` fica restrito ao desenvolvimento. Para proxy reverso local, use `TRUST_PROXY=loopback`; com proxy em outra máquina, informe apenas os IPs/sub-redes confiáveis. Na Vercel, o proxy e os cookies Secure são configurados automaticamente.
 
 Faça backups do banco. Mudanças de variáveis na Vercel exigem novo deploy; em servidor próprio, reinicie o processo. Sessões existentes expiram em oito horas; para revogar todas imediatamente, limpe a tabela `sessions` do banco.
 

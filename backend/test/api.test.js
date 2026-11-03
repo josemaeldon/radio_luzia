@@ -290,7 +290,9 @@ test("serverless entry exports an app, retries failed initialization and serves 
   const entry = new URL("../app.js", import.meta.url).href;
   const script = `
     import assert from 'node:assert/strict';
-    import app from ${JSON.stringify(entry)};
+    import { createServerlessApp } from ${JSON.stringify(entry)};
+    import { createRuntime } from ${JSON.stringify(new URL("../src/runtime.js", import.meta.url).href)};
+    const app = createServerlessApp({ initialize: () => createRuntime({...process.env, REQUIRE_REMOTE_DATABASE:'false'}) });
     const server = app.listen(0, '127.0.0.1');
     await new Promise(r => server.once('listening', r));
     const base = 'http://127.0.0.1:' + server.address().port;
@@ -307,12 +309,14 @@ test("serverless entry exports an app, retries failed initialization and serves 
     assert.match(diagnostic.details.join(' '), /ADMIN_PASSWORD/);
     process.env.ADMIN_PASSWORD = 'serverless-test-password';
     process.env.DATABASE_URL = 'ftp://private-database-marker';
+    process.env.DATABASE_AUTH_TOKEN = 'test-token';
     const badDatabase = await fetch(base + '/health');
     assert.equal(badDatabase.status, 503);
     const databaseDiagnostic = await badDatabase.text();
     assert.match(databaseDiagnostic, /BACKEND_DATABASE_UNAVAILABLE/);
     assert.ok(!databaseDiagnostic.includes('private-database-marker'));
     process.env.DATABASE_URL = '';
+    process.env.DATABASE_AUTH_TOKEN = '';
     const health = await fetch(base + '/health');
     assert.equal(health.status, 200);
     assert.equal((await health.json()).status, 'ok');
@@ -329,6 +333,9 @@ test("serverless entry exports an app, retries failed initialization and serves 
       env: {
         ...process.env,
         VERCEL: "0",
+        VERCEL_ENV: "",
+        VERCEL_URL: "",
+        NODE_ENV: "test",
         ADMIN_PASSWORD: "",
         TURSO_DATABASE_URL: "",
         TURSO_AUTH_TOKEN: "",
@@ -341,21 +348,173 @@ test("serverless entry exports an app, retries failed initialization and serves 
   );
 });
 
-test('admin passwords accept ten characters and reject shorter values', async () => {
-  const { runtimeOptions } = await import('../src/runtime.js');
-  const validPassword = 'senha-1234';
+test("admin passwords accept ten characters and reject shorter values", async () => {
+  const { runtimeOptions } = await import("../src/runtime.js");
+  const validPassword = "senha-1234";
   assert.equal(validPassword.length, 10);
-  assert.equal(runtimeOptions({ ADMIN_PASSWORD: validPassword }).adminPassword, validPassword);
-  assert.throws(() => runtimeOptions({ ADMIN_PASSWORD: 'senha-123' }), /10 caracteres/);
-  await assert.rejects(createApp({ databasePath: ':memory:', adminPassword: 'senha-123' }), /10 caracteres/);
-  const { app, db } = await createApp({ databasePath: ':memory:', adminPassword: validPassword });
-  const server = app.listen(0, '127.0.0.1');
-  await new Promise(resolve => server.once('listening', resolve));
+  assert.equal(
+    runtimeOptions({ ADMIN_PASSWORD: validPassword }).adminPassword,
+    validPassword,
+  );
+  assert.throws(
+    () => runtimeOptions({ ADMIN_PASSWORD: "senha-123" }),
+    /10 caracteres/,
+  );
+  await assert.rejects(
+    createApp({ databasePath: ":memory:", adminPassword: "senha-123" }),
+    /10 caracteres/,
+  );
+  const { app, db } = await createApp({
+    databasePath: ":memory:",
+    adminPassword: validPassword,
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
   try {
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: validPassword }),
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${server.address().port}/api/admin/login`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: validPassword }),
+      },
+    );
     assert.equal(response.status, 200);
-  } finally { await new Promise(resolve => server.close(resolve)); db.close(); }
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    db.close();
+  }
+});
+
+test("production never falls back to files and conflicting database variables are rejected", async () => {
+  const { runtimeOptions } = await import("../src/runtime.js");
+  for (const env of [
+    { NODE_ENV: "production" },
+    { VERCEL_ENV: "production" },
+    { VERCEL_URL: "test.vercel.app" },
+    { REQUIRE_REMOTE_DATABASE: "true" },
+  ]) {
+    assert.throws(
+      () =>
+        runtimeOptions({
+          ...env,
+          ADMIN_PASSWORD: "production-test-password",
+          DATABASE_PATH: "/tmp/unsafe.sqlite",
+        }),
+      /TURSO_DATABASE_URL/,
+    );
+  }
+  assert.throws(
+    () =>
+      runtimeOptions({
+        ADMIN_PASSWORD: "production-test-password",
+        TURSO_DATABASE_URL: "libsql://one.example.com",
+        TURSO_AUTH_TOKEN: "one-token",
+        DATABASE_URL: "libsql://another.example.com",
+        DATABASE_AUTH_TOKEN: "two-token",
+      }),
+    /bancos diferentes/,
+  );
+  const options = runtimeOptions({
+    VERCEL_ENV: "production",
+    ADMIN_PASSWORD: "production-test-password",
+    TURSO_DATABASE_URL: "libsql://one.example.com",
+    TURSO_AUTH_TOKEN: "one-token",
+  });
+  assert.equal(options.storageInfo.mode, "remote");
+  assert.equal(options.secureCookies, true);
+  assert.ok(!JSON.stringify(options.storageInfo).includes("one-token"));
+});
+
+test("database identity and records persist across deployments and a wrong database ID is rejected", async (t) => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "luzia-redeploy-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const options = {
+    databasePath: join(dir, "stable.sqlite"),
+    adminPassword: "persistent-test-password",
+  };
+  let runtime = await createApp(options);
+  const originalIdentity = (
+    await runtime.db
+      .prepare("SELECT instanceId FROM storage_metadata WHERE id=1")
+      .get()
+  ).instanceId;
+  await runtime.db
+    .prepare(
+      'INSERT INTO contents (title,type,url,description,published,"primary",rightsConfirmed,updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+    )
+    .run(
+      "Preservado no deploy",
+      "audio",
+      "https://example.com/audio.mp3",
+      "",
+      1,
+      1,
+      1,
+      new Date().toISOString(),
+    );
+  const customSettings = JSON.stringify({
+    stationName: "Nome preservado",
+    azuracastUrl: "https://example.com",
+    stationId: "2",
+    recordedOnly: true,
+  });
+  await runtime.db
+    .prepare("UPDATE settings SET json=? WHERE id=1")
+    .run(customSettings);
+  runtime.db.close();
+  for (let deployment = 0; deployment < 3; deployment++) {
+    runtime = await createApp({
+      ...options,
+      expectedDatabaseId: originalIdentity,
+    });
+    assert.equal(
+      (
+        await runtime.db
+          .prepare("SELECT instanceId FROM storage_metadata WHERE id=1")
+          .get()
+      ).instanceId,
+      originalIdentity,
+    );
+    assert.equal(
+      (await runtime.db.prepare("SELECT title FROM contents").get()).title,
+      "Preservado no deploy",
+    );
+    assert.equal(
+      (await runtime.db.prepare("SELECT json FROM settings WHERE id=1").get())
+        .json,
+      customSettings,
+    );
+    runtime.db.close();
+  }
+  await assert.rejects(
+    createApp({ ...options, expectedDatabaseId: "wrong-database" }),
+    /EXPECTED_DATABASE_ID/,
+  );
+  runtime = await createApp(options);
+  assert.equal(
+    (await runtime.db.prepare("SELECT COUNT(*) AS count FROM contents").get())
+      .count,
+    1,
+  );
+  runtime.db.close();
+});
+
+test('the default serverless entry rejects local storage even without Vercel system variables', async t => {
+  const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');
+  const {mkdtempSync,rmSync}=await import('node:fs');const {join}=await import('node:path');const {tmpdir}=await import('node:os');
+  const dir=mkdtempSync(join(tmpdir(),'luzia-no-file-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const path=join(dir,'must-not-exist.sqlite');
+  const script=`
+    import assert from 'node:assert/strict';import {existsSync} from 'node:fs';
+    import app from ${JSON.stringify(new URL('../app.js',import.meta.url).href)};
+    const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+    const response=await fetch('http://127.0.0.1:'+server.address().port+'/health');
+    assert.equal(response.status,503);assert.equal((await response.json()).code,'BACKEND_CONFIGURATION_INVALID');
+    assert.equal(existsSync(process.env.DATABASE_PATH),false);server.close();
+  `;
+  await promisify(execFile)(process.execPath,['--input-type=module','-e',script],{env:{...process.env,VERCEL:'',VERCEL_ENV:'',VERCEL_URL:'',NODE_ENV:'development',REQUIRE_REMOTE_DATABASE:'false',ADMIN_PASSWORD:'serverless-protection-password',TURSO_DATABASE_URL:'',TURSO_AUTH_TOKEN:'',DATABASE_URL:'',DATABASE_AUTH_TOKEN:'',DATABASE_PATH:path},timeout:15000});
 });

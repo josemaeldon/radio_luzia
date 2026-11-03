@@ -13,16 +13,16 @@ struct PlayerView: View {
                     .ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 28) {
-                        ArtworkView(url: player.currentTrack?.song.art, size: min(UIScreen.main.bounds.width - 48, 320))
+                        ArtworkView(url: player.artworkURL, size: min(UIScreen.main.bounds.width - 48, 320))
                         VStack(spacing: 10) {
-                            Text(player.nowPlaying == nil ? "Seu player de áudio" : player.primaryPlaybackTitle)
+                            Text(!player.hasPlayableContent ? "Seu player de áudio" : player.primaryPlaybackTitle)
                                 .font(.system(.title2, design: .rounded, weight: .bold))
                                 .multilineTextAlignment(.center)
-                            Text(player.nowPlaying == nil ? "Escolha um áudio ou episódio no catálogo." : "Conteúdo principal")
+                            Text(!player.hasPlayableContent ? "Escolha um áudio ou episódio no catálogo." : (player.isEpisodeSelected ? "Episódio selecionado" : "Conteúdo principal"))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
-                        if let model = player.nowPlaying { playbackControls(model) }
+                        if player.hasPlayableContent { playbackControls() }
                         else { unavailableContent }
                         Button { showContents = true } label: {
                             Label("Ver conteúdos", systemImage: "headphones")
@@ -63,7 +63,7 @@ struct PlayerView: View {
                 ProgressView()
                 Text("Carregando conteúdo…")
             } else {
-                Label("Nenhum áudio principal disponível", systemImage: "play.slash")
+                Label(player.isEpisodeSelected ? "Episódio indisponível" : "Nenhum áudio principal disponível", systemImage: "play.slash")
                 Text("Os áudios e podcasts publicados aparecem no catálogo de conteúdos.")
                     .font(.footnote)
                     .multilineTextAlignment(.center)
@@ -76,7 +76,7 @@ struct PlayerView: View {
         .glassCard()
     }
 
-    private func playbackControls(_ model: NowPlaying) -> some View {
+    private func playbackControls() -> some View {
         VStack(spacing: 22) {
             HStack(spacing: 28) {
                 AirPlayButton().frame(width: 44, height: 44).roundGlassControl()
@@ -96,10 +96,12 @@ struct PlayerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(player.isPlaying ? "Pausar áudio" : "Reproduzir áudio")
-                ShareLink(item: player.primaryPlaybackURL ?? model.station.listenURL, subject: Text(player.primaryPlaybackTitle), message: Text("Ouça este conteúdo no Luzia Player.")) {
-                    Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44).roundGlassControl()
+                if let url = player.primaryPlaybackURL {
+                    ShareLink(item: url, subject: Text(player.primaryPlaybackTitle), message: Text("Ouça este conteúdo no Luzia Player.")) {
+                        Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44).roundGlassControl()
+                    }
+                    .accessibilityLabel("Compartilhar conteúdo")
                 }
-                .accessibilityLabel("Compartilhar conteúdo")
             }
             HStack(spacing: 12) {
                 Image(systemName: "speaker.fill")
@@ -108,6 +110,7 @@ struct PlayerView: View {
             }
             .foregroundStyle(.secondary)
             Text(player.state.label).font(.caption).foregroundStyle(.secondary)
+            if player.isEpisodeSelected { Button("Voltar ao conteúdo principal") { player.playPrimary() }.font(.footnote) }
         }
         .padding(22)
         .glassCard()

@@ -1,4 +1,5 @@
 import XCTest
+import MediaPlayer
 @testable import RadioLuzia
 
 final class NowPlayingTests: XCTestCase {
@@ -118,5 +119,41 @@ extension NowPlayingTests {
         XCTAssertEqual(single.item(currentID: "one", advancing: true)?.id, "one")
         let audio = PrimaryPlayback(contentId: "10", title: "Áudio", type: "audio", loop: false, items: [first])
         XCTAssertNil(audio.item(currentID: "one", advancing: true))
+    }
+}
+
+extension NowPlayingTests {
+    @MainActor
+    func testCatalogSelectionLivesInTheSharedPlayerAndPublishesLockScreenMetadata() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ManagedAPIProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        ManagedAPIProtocol.status = 200
+        ManagedAPIProtocol.requests = []
+        ManagedAPIProtocol.payload = Data(#"[{"id":"selected-episode","title":"Episódio selecionado","links":{"download":"https://audio.example.com/selected.mp3"}}]"#.utf8)
+        let api = AzuraCastAPI(baseURL: URL(string: "https://backend.test")!, session: session)
+        let sharedPlayer = RadioPlayer(api: api)
+        let loaded = await sharedPlayer.selectEpisode(episodeID: "selected-episode", podcastID: "9", autoplay: false)
+        XCTAssertTrue(loaded)
+        XCTAssertTrue(sharedPlayer.hasPlayableContent)
+        XCTAssertTrue(sharedPlayer.isEpisodeSelected)
+        XCTAssertNil(sharedPlayer.nowPlaying) // No primary is needed for an episode.
+        XCTAssertEqual(sharedPlayer.primaryPlaybackTitle, "Episódio selecionado")
+        sharedPlayer.pause()
+        XCTAssertEqual(sharedPlayer.primaryPlaybackURL?.absoluteString, "https://audio.example.com/selected.mp3")
+        XCTAssertEqual(MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String, "Episódio selecionado")
+        let refreshed = await sharedPlayer.refreshMetadata()
+        XCTAssertTrue(refreshed)
+        XCTAssertEqual(sharedPlayer.episodeSelection?.episodeID, "selected-episode")
+        XCTAssertEqual(sharedPlayer.state, .paused)
+        XCTAssertTrue(ManagedAPIProtocol.requests.allSatisfy { $0.url?.path == "/api/v1/podcast/9/episodes" })
+        ManagedAPIProtocol.status = 404
+        ManagedAPIProtocol.payload = Data("{}".utf8)
+        let unpublished = await sharedPlayer.refreshMetadata(showError: false)
+        XCTAssertFalse(unpublished)
+        XCTAssertFalse(sharedPlayer.hasPlayableContent)
+        XCTAssertFalse(sharedPlayer.isPlaying)
+        XCTAssertNil(sharedPlayer.primaryPlaybackURL)
     }
 }

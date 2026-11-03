@@ -8,10 +8,10 @@ struct StationDetailsView: View {
     var body: some View {
         NavigationStack {
             List {
-                if let model = player.nowPlaying {
-                    Section("Conteúdo principal") {
+                if player.hasPlayableContent {
+                    Section(player.isEpisodeSelected ? "Episódio selecionado" : "Conteúdo principal") {
                         LabeledContent("Título", value: player.primaryPlaybackTitle)
-                        if !model.station.description.isEmpty { Text(model.station.description) }
+                        if let description = player.nowPlaying?.station.description, !description.isEmpty { Text(description) }
                     }
                 }
                 if !links.isEmpty {

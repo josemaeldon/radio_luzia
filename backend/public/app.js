@@ -143,6 +143,29 @@ async function remove(item) {
     { once: true },
   );
 }
+async function loadStorageStatus() {
+  try {
+    const storage = await api("admin/storage");
+    $("#storage-status").textContent =
+      `${storage.mode === "remote" ? "Banco remoto persistente" : "Banco local de desenvolvimento"} · ${storage.contents} conteúdo(s) cadastrado(s)`;
+    $("#storage-identity").textContent = storage.databaseId;
+    const warning = $("#storage-warning");
+    try {
+      const previous = localStorage.getItem("luzia:lastDatabaseId");
+      if (previous && previous !== storage.databaseId) {
+        warning.textContent =
+          "Este endereço passou a usar outro banco. Os conteúdos anteriores podem estar no banco vinculado ao deployment anterior. Confira as variáveis de ambiente antes de cadastrar novamente.";
+        warning.hidden = false;
+      }
+      localStorage.setItem("luzia:lastDatabaseId", storage.databaseId);
+    } catch {
+      /* Browser storage is optional; the database remains authoritative. */
+    }
+  } catch {
+    $("#storage-status").textContent =
+      "Não foi possível consultar a identificação do banco.";
+  }
+}
 async function openDashboard() {
   $("#dashboard").hidden = false;
   $("#login").hidden = true;
@@ -155,6 +178,7 @@ async function openDashboard() {
     else input.value = value;
   }
   $("#endpoint").textContent = location.origin + "/api/v1/config";
+  await loadStorageStatus();
 }
 $("#login-form").onsubmit = async (event) => {
   event.preventDefault();
@@ -245,6 +269,7 @@ for (const button of document.querySelectorAll("[data-view]"))
       b.classList.toggle("active", selected);
       $("#" + b.dataset.view + "-view").hidden = !selected;
     }
+    if (button.dataset.view === "settings") void loadStorageStatus();
   };
 (async () => {
   try {
