@@ -10,7 +10,7 @@ Requer Node.js 22. Na Vercel, a versão está definida em `package.json`.
 cd backend
 npm ci
 cp .env.example .env
-# Edite .env e defina uma ADMIN_PASSWORD única, com ao menos 12 caracteres.
+# Edite .env e defina uma ADMIN_PASSWORD única, com ao menos 10 caracteres.
 npm start
 ```
 
@@ -91,7 +91,7 @@ A configuração segue o [suporte oficial de Express na Vercel](https://vercel.c
 
    | Variável | Valor |
    | --- | --- |
-   | `ADMIN_PASSWORD` | Senha administrativa única, com pelo menos 12 caracteres |
+   | `ADMIN_PASSWORD` | Senha administrativa única, com pelo menos 10 caracteres |
    | `TURSO_DATABASE_URL` | URL `libsql://...` ou HTTPS do banco remoto |
    | `TURSO_AUTH_TOKEN` | Token de acesso ao banco |
 
@@ -105,6 +105,13 @@ Também é possível usar a [CLI oficial da Vercel](https://vercel.com/docs/fram
 Na Vercel, **não use `DATABASE_PATH` nem arquivos em `/tmp` como banco persistente**. A aplicação recusa inicialização nesse ambiente se não houver banco remoto e token configurados. Conteúdos, sessões e contadores de limite de requisições ficam no mesmo banco remoto, compartilhados entre instâncias. A seleção do principal usa transação para evitar dois principais publicados. Os apps continuam reproduzindo o áudio diretamente do AzuraCast; a Vercel serve o painel e a configuração, sem retransmitir os arquivos de áudio.
 
 `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN` também podem ser usados localmente. Como alternativa, são aceitos os nomes `DATABASE_URL` e `DATABASE_AUTH_TOKEN`. Se as variáveis de banco remoto estiverem vazias fora da Vercel, o desenvolvimento usa `DATABASE_PATH=./data/radio.sqlite`, compatível com o banco criado pela versão anterior.
+
+## Resolver falhas de publicação
+
+- **GitHub Pages / Jekyll informa `/github/workspace/docs` inexistente:** o repositório está com Pages configurado para uma pasta ausente. Essa execução é independente da Vercel. Se a hospedagem usada será apenas a Vercel, em GitHub → Settings → Pages → Build and deployment → Branch, selecione **None** e salve. O código deste backend não precisa de GitHub Pages.
+- **Vercel retorna 503:** confira `ADMIN_PASSWORD`, `TURSO_DATABASE_URL` e `TURSO_AUTH_TOKEN` nas variáveis de **Production** e faça **Redeploy**. Preencher `.env.example` no GitHub não configura a Vercel. A resposta inclui `BACKEND_CONFIGURATION_INVALID` para variáveis ausentes/inválidas e `BACKEND_DATABASE_UNAVAILABLE` para erros de conexão/inicialização. Consulte também os Runtime Logs, que registram códigos sem expor os valores das credenciais.
+- O painel estático abre mesmo quando a API não consegue inicializar; o login informa o diagnóstico. `/health` continua retornando 503 enquanto o backend não estiver funcional.
+- Se um token ou senha real tiver sido commitado, substitua-o no serviço e configure o novo valor na Vercel. Limpar o arquivo atual não remove os valores de commits antigos. `.env` é local e ignorado pelo Git; `.env.example` deve conter apenas campos vazios ou exemplos sem credenciais.
 
 ## Outras hospedagens Node
 

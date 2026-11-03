@@ -71,8 +71,8 @@ export async function createApp({
   secureCookies = false,
   trustProxy = false,
 } = {}) {
-  if (!adminPassword || adminPassword.length < 12)
-    throw new Error("Defina ADMIN_PASSWORD com pelo menos 12 caracteres.");
+  if (!adminPassword || adminPassword.length < 10)
+    throw new Error("Defina ADMIN_PASSWORD com pelo menos 10 caracteres.");
   const db = await openDatabase({
     databasePath,
     databaseUrl,

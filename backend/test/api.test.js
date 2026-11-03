@@ -294,8 +294,25 @@ test("serverless entry exports an app, retries failed initialization and serves 
     const server = app.listen(0, '127.0.0.1');
     await new Promise(r => server.once('listening', r));
     const base = 'http://127.0.0.1:' + server.address().port;
-    assert.equal((await fetch(base + '/health')).status, 503);
+    const initialPage = await fetch(base);
+    assert.equal(initialPage.status, 200);
+    assert.match(await initialPage.text(), /Conteúdos do app/);
+    assert.equal((await fetch(base + '/app.js')).status, 200);
+    assert.equal((await fetch(base + '/style.css')).status, 200);
+    const unavailable = await fetch(base + '/health');
+    assert.equal(unavailable.status, 503);
+    assert.equal(unavailable.headers.get('cache-control'), 'no-store');
+    const diagnostic = await unavailable.json();
+    assert.equal(diagnostic.code, 'BACKEND_CONFIGURATION_INVALID');
+    assert.match(diagnostic.details.join(' '), /ADMIN_PASSWORD/);
     process.env.ADMIN_PASSWORD = 'serverless-test-password';
+    process.env.DATABASE_URL = 'ftp://private-database-marker';
+    const badDatabase = await fetch(base + '/health');
+    assert.equal(badDatabase.status, 503);
+    const databaseDiagnostic = await badDatabase.text();
+    assert.match(databaseDiagnostic, /BACKEND_DATABASE_UNAVAILABLE/);
+    assert.ok(!databaseDiagnostic.includes('private-database-marker'));
+    process.env.DATABASE_URL = '';
     const health = await fetch(base + '/health');
     assert.equal(health.status, 200);
     assert.equal((await health.json()).status, 'ok');
@@ -322,4 +339,23 @@ test("serverless entry exports an app, retries failed initialization and serves 
       timeout: 15000,
     },
   );
+});
+
+test('admin passwords accept ten characters and reject shorter values', async () => {
+  const { runtimeOptions } = await import('../src/runtime.js');
+  const validPassword = 'senha-1234';
+  assert.equal(validPassword.length, 10);
+  assert.equal(runtimeOptions({ ADMIN_PASSWORD: validPassword }).adminPassword, validPassword);
+  assert.throws(() => runtimeOptions({ ADMIN_PASSWORD: 'senha-123' }), /10 caracteres/);
+  await assert.rejects(createApp({ databasePath: ':memory:', adminPassword: 'senha-123' }), /10 caracteres/);
+  const { app, db } = await createApp({ databasePath: ':memory:', adminPassword: validPassword });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/admin/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: validPassword }),
+    });
+    assert.equal(response.status, 200);
+  } finally { await new Promise(resolve => server.close(resolve)); db.close(); }
 });

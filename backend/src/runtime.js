@@ -4,15 +4,23 @@ export function runtimeOptions(env = process.env) {
   const vercel = env.VERCEL === "1";
   const databaseUrl = env.TURSO_DATABASE_URL || env.DATABASE_URL;
   const databaseAuthToken = env.TURSO_AUTH_TOKEN || env.DATABASE_AUTH_TOKEN;
-  if (
-    vercel &&
-    (!databaseUrl ||
-      !/^(libsql|https):\/\//.test(databaseUrl) ||
-      !databaseAuthToken)
-  ) {
-    throw new Error(
-      "Na Vercel, configure TURSO_DATABASE_URL (libsql:// ou HTTPS) e TURSO_AUTH_TOKEN. Banco local não é persistente.",
+  const issues = [];
+  if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 10) {
+    issues.push("Defina ADMIN_PASSWORD com pelo menos 10 caracteres.");
+  }
+  if (vercel && (!databaseUrl || !/^(libsql|https):\/\//.test(databaseUrl))) {
+    issues.push(
+      "Defina TURSO_DATABASE_URL com a URL libsql:// ou HTTPS do banco remoto.",
     );
+  }
+  if (vercel && !databaseAuthToken) {
+    issues.push("Defina TURSO_AUTH_TOKEN com um token válido do banco.");
+  }
+  if (issues.length) {
+    const error = new Error(issues.join(" "));
+    error.code = "BACKEND_CONFIGURATION_INVALID";
+    error.issues = issues;
+    throw error;
   }
   return {
     databaseUrl,
