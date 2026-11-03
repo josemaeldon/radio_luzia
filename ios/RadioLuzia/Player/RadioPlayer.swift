@@ -12,8 +12,8 @@ final class RadioPlayer {
         var label: String {
             switch self {
             case .idle: "Pronto para ouvir"
-            case .connecting: "Conectando ao vivo…"
-            case .playing: "Transmitindo ao vivo"
+            case .connecting: "Conectando ao áudio…"
+            case .playing: "Reproduzindo áudio"
             case .paused: "Transmissão pausada"
             case .failed: "Falha na conexão"
             }
@@ -34,6 +34,7 @@ final class RadioPlayer {
     private var stalledObservation: NSObjectProtocol?
     private var interruptionObservation: NSObjectProtocol?
     private var activeStreamURL: URL?
+    private var managedRefreshTask: Task<Void, Never>?
     private var started = false
     private var wantsPlayback = false
     private var shouldResumeAfterInterruption = false
@@ -63,6 +64,15 @@ final class RadioPlayer {
         guard !started else { return }
         started = true
         await refreshMetadata(showError: false)
+        if AzuraCastAPI.isManaged {
+            managedRefreshTask = Task { [weak self] in
+                while !Task.isCancelled && self != nil {
+                    do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                    await self?.refreshMetadata(showError: false)
+                }
+            }
+            return
+        }
         await socket.connect { [weak self] model in
             self?.apply(model)
         }
@@ -121,6 +131,11 @@ final class RadioPlayer {
         do {
             apply(try await api.nowPlaying())
         } catch {
+            if AzuraCastAPI.isManaged {
+                pause()
+                nowPlaying = nil
+                selectedMountID = nil
+            }
             if showError { errorMessage = "Não foi possível atualizar os dados da rádio." }
         }
     }

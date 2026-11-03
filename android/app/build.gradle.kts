@@ -44,6 +44,9 @@ android {
         targetSdk = 35
         versionCode = 11
         versionName = "3.0"
+        val radioBackendUrl = providers.gradleProperty("RADIO_BACKEND_URL").orElse("").get()
+        require(radioBackendUrl.isEmpty() || (radioBackendUrl.startsWith("https://") && !radioBackendUrl.contains('"') && !radioBackendUrl.contains('\\'))) { "RADIO_BACKEND_URL deve ser HTTPS" }
+        buildConfigField("String", "RADIO_BACKEND_URL", "\"${radioBackendUrl.trimEnd('/')}\"")
     }
     buildTypes {
         release {
@@ -51,7 +54,7 @@ android {
             isMinifyEnabled = false
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 

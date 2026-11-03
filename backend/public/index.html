@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Luzia · Painel da rádio</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <section id="login" class="login" hidden>
+      <form id="login-form">
+        <span class="wordmark">Luzia</span>
+        <h1>Painel da rádio</h1>
+        <p>Entre para gerenciar os conteúdos do app.</p>
+        <label for="password">Senha de administração</label
+        ><input
+          id="password"
+          type="password"
+          required
+          maxlength="1024"
+          autocomplete="current-password"
+        /><button type="submit">Entrar no painel</button>
+        <p id="login-error" role="alert"></p>
+      </form>
+    </section>
+    <div id="dashboard" hidden>
+      <aside>
+        <div class="brand">
+          <strong>Rádio Santa Luzia</strong><span class="wordmark">Luzia</span
+          ><span>Painel da rádio</span>
+        </div>
+        <nav aria-label="Painel">
+          <button data-view="contents" class="active">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="m10 8 6 4-6 4Z" /></svg
+            ><span>Conteúdos</span></button
+          ><button data-view="settings">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="m9 3 1-2h4l1 2 2 1 2-1 2 3-1 2v3l2 1-1 4-2 1-1 2 1 2-4 2-2-1h-2l-2 1-3-2v-3l-2-1-2-1 1-4 2-1V8L3 6l3-3 2 1Z"
+                transform="translate(1 1) scale(.9)"
+              />
+              <circle cx="12" cy="12" r="3" /></svg
+            ><span>Configuração</span>
+          </button>
+        </nav>
+        <button id="logout" class="logout">Sair do painel</button>
+      </aside>
+      <main>
+        <section id="contents-view">
+          <header>
+            <div>
+              <h1>Conteúdos do app</h1>
+              <p>Gerencie o que sua comunidade ouve.</p>
+            </div>
+            <button id="add">＋ Adicionar conteúdo</button>
+          </header>
+          <div class="notice">
+            Transmissões, áudios e podcasts em um só lugar.
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Conteúdo</th>
+                  <th>Tipo</th>
+                  <th>Publicação</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="contents"></tbody>
+            </table>
+          </div>
+          <section class="editor">
+            <h2 id="editor-title">Adicionar conteúdo</h2>
+            <form id="content-form">
+              <div class="two-columns">
+                <div>
+                  <label for="title">Título <b>*</b></label
+                  ><input
+                    id="title"
+                    name="title"
+                    required
+                    maxlength="150"
+                    placeholder="Ex.: Programação da paróquia"
+                  />
+                </div>
+                <div>
+                  <label for="type">Tipo <b>*</b></label
+                  ><select id="type" name="type" required>
+                    <option value="">Selecione o tipo</option>
+                    <option value="stream">Transmissão</option>
+                    <option value="audio">Áudio gravado</option>
+                    <option value="public_page">Página pública</option>
+                    <option value="podcast_feed">Podcast (feed RSS)</option>
+                  </select>
+                </div>
+              </div>
+              <label for="url">URL HTTPS <b>*</b></label
+              ><input
+                id="url"
+                name="url"
+                type="url"
+                required
+                maxlength="2048"
+                placeholder="Ex.: https://exemplo.com/arquivo.mp3"
+              />
+              <p id="url-help" class="field-help">
+                Use o endereço direto do áudio ou da transmissão.
+              </p>
+              <label for="description">Descrição</label
+              ><textarea
+                id="description"
+                name="description"
+                maxlength="2000"
+                placeholder="Descreva o conteúdo para sua comunidade."
+              ></textarea>
+              <div class="checks">
+                <label
+                  ><input name="rightsConfirmed" type="checkbox" /> Confirmo que
+                  tenho os direitos de publicação</label
+                ><label
+                  ><input name="published" type="checkbox" /> Publicar no
+                  app</label
+                ><label
+                  ><input name="primary" type="checkbox" /> Usar como reprodução
+                  principal</label
+                >
+              </div>
+              <div class="form-actions">
+                <button type="submit">Salvar conteúdo</button
+                ><button type="button" id="cancel" class="secondary" hidden>
+                  Cancelar edição
+                </button>
+              </div>
+            </form>
+          </section>
+          <p class="hint">
+            Páginas públicas abrem no navegador. Para ouvir no app, use um link
+            direto de áudio.
+          </p>
+        </section>
+        <section id="settings-view" hidden>
+          <header>
+            <div>
+              <h1>Configuração</h1>
+              <p>Conecte os apps à sua estação.</p>
+            </div>
+          </header>
+          <form id="settings-form" class="settings-form">
+            <label for="stationName">Nome da rádio</label
+            ><input
+              id="stationName"
+              name="stationName"
+              required
+              maxlength="150"
+            /><label for="azuracastUrl">Endereço do AzuraCast (HTTPS)</label
+            ><input
+              id="azuracastUrl"
+              name="azuracastUrl"
+              type="url"
+              required
+              placeholder="https://webradio.cloudbr.app"
+            /><label for="stationId">ID ou nome curto da estação</label
+            ><input
+              id="stationId"
+              name="stationId"
+              required
+              pattern="[a-zA-Z0-9_-]{1,80}"
+            /><label class="check"
+              ><input name="recordedOnly" type="checkbox" /> Programação
+              exclusiva de conteúdo gravado</label
+            >
+            <p class="field-help">
+              Esta informação descreve sua programação; não verifica nem altera
+              o áudio no AzuraCast.
+            </p>
+            <button type="submit">Salvar configuração</button>
+          </form>
+          <section class="integration">
+            <h2>Integração dos aplicativos</h2>
+            <p>Endpoint público de configuração:</p>
+            <code id="endpoint"></code>
+            <p>
+              Cadastre o endereço do backend nas configurações de compilação dos
+              apps. Páginas e feeds são publicados como links; feeds RSS não são
+              links diretos de reprodução.
+            </p>
+            <p>
+              A confirmação de direitos é uma declaração administrativa. Guarde
+              as autorizações e apresente-as à Apple quando solicitado.
+            </p>
+          </section>
+        </section>
+        <div id="feedback" role="status" aria-live="polite" hidden></div>
+        <dialog id="delete-dialog">
+          <form method="dialog">
+            <h2>Excluir conteúdo?</h2>
+            <p>O item será removido do painel e da API pública.</p>
+            <div class="form-actions">
+              <button value="cancel" class="secondary">Cancelar</button
+              ><button value="delete" class="danger">Excluir conteúdo</button>
+            </div>
+          </form>
+        </dialog>
+      </main>
+    </div>
+  </body>
+</html>

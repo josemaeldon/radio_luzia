@@ -16,7 +16,7 @@ struct QualityPickerView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(mount.name).foregroundStyle(.primary)
-                                    Text("\(mount.format.uppercased()) • \(mount.bitrate) kbps")
+                                    Text(mount.bitrate > 0 ? "\(mount.format.uppercased()) • \(mount.bitrate) kbps" : "Áudio publicado")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -27,10 +27,10 @@ struct QualityPickerView: View {
                         }
                     }
                 } footer: {
-                    Text("Uma qualidade menor economiza dados móveis. A troca mantém a programação ao vivo.")
+                    Text(!AzuraCastAPI.isManaged ? "Uma qualidade menor economiza dados móveis. A troca mantém a programação ao vivo." : "Selecione um dos áudios ou transmissões publicados pela rádio.")
                 }
             }
-            .navigationTitle("Qualidade do áudio")
+            .navigationTitle(!AzuraCastAPI.isManaged ? "Qualidade do áudio" : "Áudios disponíveis")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { dismiss() } } }
         }

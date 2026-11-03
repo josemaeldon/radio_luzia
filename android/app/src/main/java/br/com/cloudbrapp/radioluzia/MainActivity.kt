@@ -85,7 +85,7 @@ private val Cream = Color(0xFFFFF5DD)
 
 data class Track(val id: String, val title: String, val artist: String, val album: String, val art: String?, val elapsed: Double, val duration: Double)
 data class Mount(val id: Int, val name: String, val url: String, val bitrate: Int, val format: String, val isDefault: Boolean)
-data class Station(val name: String, val description: String, val timezone: String, val listenUrl: String, val publicUrl: String?, val requestsEnabled: Boolean, val mounts: List<Mount>)
+data class Station(val name: String, val description: String, val timezone: String, val listenUrl: String, val publicUrl: String?, val requestsEnabled: Boolean, val mounts: List<Mount>, val managedLinks: List<Pair<String, String>> = emptyList())
 data class RadioState(val station: Station? = null, val current: Track? = null, val next: Track? = null, val history: List<Track> = emptyList(), val listeners: Int = 0, val online: Boolean = false, val live: Boolean = false, val streamer: String = "", val isPlaying: Boolean = false, val connecting: Boolean = false, val selectedMount: Mount? = null, val error: String? = null)
 data class RequestSong(val requestId: String, val title: String, val artist: String, val album: String, val art: String?)
 data class Podcast(val id: String, val title: String, val art: String?)
@@ -237,13 +237,19 @@ class PodcastPlaybackService : MediaSessionService() {
 }
 
 private object RadioApi {
-    private const val base = "https://webradio.cloudbr.app"
+    private val managed get() = BuildConfig.RADIO_BACKEND_URL.isNotEmpty()
+    private val base get() = BuildConfig.RADIO_BACKEND_URL.ifEmpty { "https://webradio.cloudbr.app" }
     private fun get(path: String): JSONObject = (URL(base + path).openConnection() as HttpURLConnection).run {
         connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
         if (responseCode !in 200..299) error("Resposta inválida")
         inputStream.bufferedReader().use { JSONObject(it.readText()) }
     }
-    fun nowPlaying(): JSONObject = get("/api/nowplaying/santaluziapgm")
+    fun nowPlaying(): JSONObject = get(if (managed) "/api/v1/nowplaying" else "/api/nowplaying/santaluziapgm")
+    fun managedLinks(): List<Pair<String, String>> {
+        if (!managed) return emptyList()
+        val contents = get("/api/v1/config").getJSONArray("contents")
+        return buildList { for (i in 0 until contents.length()) { val c = contents.getJSONObject(i); if (c.text("type") in listOf("public_page", "podcast_feed")) add(c.text("title") to c.text("url")) } }
+    }
     fun requests(): JSONArray = (URL("$base/api/station/2/requests").openConnection() as HttpURLConnection).run {
         connectTimeout = 15000; readTimeout = 15000
         inputStream.bufferedReader().use { JSONArray(it.readText()) }
@@ -253,8 +259,8 @@ private object RadioApi {
         if (responseCode !in 200..299) error("Não foi possível enviar o pedido agora.")
         inputStream.bufferedReader().use { JSONObject(it.readText()).optString("message", "Pedido enviado para a programação.") }
     }
-    fun podcasts(): JSONArray = getArray("/api/station/2/public/podcasts")
-    fun episodes(id: String): JSONArray = getArray("/api/station/2/public/podcast/$id/episodes")
+    fun podcasts(): JSONArray = getArray(if (managed) "/api/v1/podcasts" else "/api/station/2/public/podcasts")
+    fun episodes(id: String): JSONArray = getArray(if (managed) "/api/v1/podcast/$id/episodes" else "/api/station/2/public/podcast/$id/episodes")
     private fun getArray(path: String): JSONArray = (URL(base + path).openConnection() as HttpURLConnection).run {
         connectTimeout = 15000; readTimeout = 15000; requestMethod = "GET"
         if (responseCode !in 200..299) error("Resposta inválida")
@@ -292,7 +298,7 @@ class RadioViewModel : ViewModel() {
     var podcastsLoading by mutableStateOf(false); private set
     private var userWantsPlayback = false
     init { refresh(); viewModelScope.launch { while (true) { delay(15000); refresh() } } }
-    fun refresh() = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.nowPlaying() }.onSuccess { json -> state = parseState(json, state) }.onFailure { if (state.station == null) state = state.copy(error = "Não foi possível atualizar os dados da rádio.") } }
+    fun refresh() = viewModelScope.launch(Dispatchers.IO) { runCatching { RadioApi.nowPlaying() }.onSuccess { json -> val parsed = parseState(json, state); val links = runCatching { RadioApi.managedLinks() }.getOrDefault(emptyList()); state = parsed.copy(station = parsed.station?.copy(managedLinks = links)) }.onFailure { state = if (BuildConfig.RADIO_BACKEND_URL.isNotEmpty()) state.copy(station = null, selectedMount = null, online = false, error = "Não foi possível carregar a configuração da rádio.") else state.copy(error = "Não foi possível atualizar os dados da rádio.") } }
     fun clearError() { state = state.copy(error = null) }
     fun toggle(context: Context) { if (state.isPlaying || state.connecting) pause(context) else play(context) }
     fun play(context: Context) {
@@ -561,8 +567,8 @@ private fun formatDuration(seconds: Double): String {
 @Composable private fun TrackLine(track: Track) { Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { RemoteArtwork(track.art, Modifier.size(48.dp).clip(RoundedCornerShape(10.dp))); Spacer(Modifier.width(12.dp)); Column { Text(track.title, color = Color.White, maxLines = 1); Text(track.artist, color = Color.White.copy(.62f), fontSize = 12.sp, maxLines = 1) } } }
 private fun Modifier.card() = this.fillMaxWidth().background(Color.White.copy(.08f), RoundedCornerShape(24.dp)).padding(20.dp)
 
-@Composable private fun QualityDialog(state: RadioState, vm: RadioViewModel, context: Context, close: () -> Unit) { AlertDialog(onDismissRequest = close, title = { Text("Qualidade do áudio") }, text = { Column { state.station?.mounts?.forEach { mount -> Row(Modifier.fillMaxWidth().clickable { vm.selectMount(mount, context); close() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(mount.name); Text("${mount.format.uppercase()} • ${mount.bitrate} kbps", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; if (state.selectedMount?.id == mount.id) Icon(Icons.Default.CheckCircle, null, tint = Gold) } } } }, confirmButton = { TextButton(onClick = close) { Text("Fechar") } }) }
-@Composable private fun DetailsDialog(state: RadioState, close: () -> Unit) { AlertDialog(onDismissRequest = close, title = { Text("Sobre a transmissão") }, text = { Column { state.station?.let { Text("${it.name}\n${it.description}\nFuso: ${it.timezone}\nOuvintes agora: ${state.listeners}\nStatus: ${if (state.online) "No ar" else "Fora do ar"}", lineHeight = 22.sp) }; Spacer(Modifier.height(12.dp)); Text("Metadados instantâneos via WebSocket\nÁudio Icecast em segundo plano\nControles de reprodução no Android", lineHeight = 22.sp) } }, confirmButton = { TextButton(onClick = close) { Text("OK") } }) }
+@Composable private fun QualityDialog(state: RadioState, vm: RadioViewModel, context: Context, close: () -> Unit) { AlertDialog(onDismissRequest = close, title = { Text("Qualidade do áudio") }, text = { Column { state.station?.mounts?.forEach { mount -> Row(Modifier.fillMaxWidth().clickable { vm.selectMount(mount, context); close() }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(mount.name); Text(if (mount.bitrate > 0) "${mount.format.uppercase()} • ${mount.bitrate} kbps" else "Áudio publicado", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }; if (state.selectedMount?.id == mount.id) Icon(Icons.Default.CheckCircle, null, tint = Gold) } } } }, confirmButton = { TextButton(onClick = close) { Text("Fechar") } }) }
+@Composable private fun DetailsDialog(state: RadioState, close: () -> Unit) { val context = LocalContext.current; AlertDialog(onDismissRequest = close, title = { Text("Sobre a transmissão") }, text = { Column { state.station?.let { Text("${it.name}\n${it.description}\nFuso: ${it.timezone}\nOuvintes agora: ${state.listeners}\nStatus: ${if (state.online) "No ar" else "Fora do ar"}", lineHeight = 22.sp) }; state.station?.managedLinks?.forEach { (title, url) -> TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }) { Text(title) } }; Spacer(Modifier.height(12.dp)); Text(if (BuildConfig.RADIO_BACKEND_URL.isEmpty()) "Metadados do AzuraCast\nÁudio em segundo plano\nControles de reprodução no Android" else "Conteúdos publicados pela rádio\nÁudio em segundo plano\nControles de reprodução no Android", lineHeight = 22.sp) } }, confirmButton = { TextButton(onClick = close) { Text("OK") } }) }
 
 @Composable
 private fun RequestsDialog(vm: RadioViewModel, close: () -> Unit) {

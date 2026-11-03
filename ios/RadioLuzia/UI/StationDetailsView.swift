@@ -4,9 +4,18 @@ struct StationDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(RadioPlayer.self) private var player
 
+    @State private var managedContents: [AzuraCastAPI.ManagedContent] = []
+
     var body: some View {
         NavigationStack {
             List {
+                if !managedContents.isEmpty {
+                    Section("Páginas e podcasts") {
+                        ForEach(managedContents) { content in
+                            Link(content.title, destination: content.url)
+                        }
+                    }
+                }
                 if let model = player.nowPlaying {
                     Section("Estação") {
                         LabeledContent("Nome", value: model.station.name)
@@ -25,8 +34,10 @@ struct StationDetailsView: View {
                         Section("Letra") { Text(model.nowPlaying.song.lyrics).textSelection(.enabled) }
                     }
                     Section("Tecnologia") {
-                        Label("Metadados instantâneos via WebSocket", systemImage: "bolt.horizontal.circle")
-                        Label("Áudio Icecast em segundo plano", systemImage: "waveform.circle")
+                        if !AzuraCastAPI.isManaged {
+                            Label("Metadados instantâneos via WebSocket", systemImage: "bolt.horizontal.circle")
+                        }
+                        Label("Áudio em segundo plano", systemImage: "waveform.circle")
                         Label("Controles na tela bloqueada", systemImage: "lock.iphone")
                     }
                 }
@@ -34,6 +45,10 @@ struct StationDetailsView: View {
             .navigationTitle("Sobre a transmissão")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } } }
+        }
+        .task {
+            managedContents = ((try? await AzuraCastAPI.shared.managedContents()) ?? [])
+                .filter { $0.type == "public_page" || $0.type == "podcast_feed" }
         }
         .preferredColorScheme(.dark)
     }

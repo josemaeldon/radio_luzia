@@ -25,3 +25,9 @@ Abra `ios/RadioLuzia.xcodeproj` no Xcode, selecione sua equipe em **Signing & Ca
 Para Android, abra a pasta `android/` no Android Studio e sincronize o Gradle. O application id também é `br.com.cloudbrapp.radioluzia`.
 
 O arquivo `ios/project.yml` documenta a estrutura do projeto iOS e pode ser usado com XcodeGen se desejado.
+
+## Painel e API de conteúdos
+
+A pasta [`backend/`](backend/README.md) contém o painel administrativo com login, banco libSQL/Turso (ou SQLite local) e API pública para definir links de transmissão, áudios gravados, páginas públicas e feeds de podcast. Consulte o guia para executar, hospedar e configurar o endereço do backend nos aplicativos iOS/Android.
+
+O backend está preparado para a Vercel com `backend` como Root Directory. O guia inclui as variáveis do banco remoto e a configuração do deploy.
