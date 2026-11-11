@@ -26,6 +26,12 @@ Abra http://127.0.0.1:3000. A senha não é incluída nos aplicativos. `.env`, b
 6. Confirme os direitos, marque **Publicar no app** e, para áudio, transmissão ou podcast, **Usar como reprodução principal**. Apenas um item pode ser principal. Em podcasts, o app revalida a fila no fim de cada episódio e nas consultas periódicas; se o feed ficar vazio, for despublicado ou estiver indisponível, a reprodução é interrompida. Os demais áudios gravados publicados ficam no catálogo de programas do app. Outras transmissões ficam cadastradas e podem ser escolhidas como principal no painel.
 7. Rascunhos ficam apenas no painel. Excluir/despublicar o principal deixa o endpoint de reprodução indisponível até você definir outro principal. Não há retorno automático à transmissão antiga.
 
+### Episódio associado a um vídeo do YouTube
+
+Em **Episódio / áudio gravado**, o campo **Vídeo do YouTube de referência** registra o link do vídeo. Se o áudio ainda não estiver disponível, deixe a URL de áudio vazia e salve como rascunho. Para publicar, informe uma URL HTTPS direta de um arquivo de áudio próprio ou autorizado (por exemplo, um MP3 hospedado no AzuraCast), confirme os direitos e marque **Publicar no app**. O episódio aparecerá no catálogo nativo e tocará apenas o arquivo de áudio informado.
+
+O backend não extrai, converte nem retransmite áudio de URLs do YouTube. Um link de vídeo não pode ser usado no campo de áudio. O link de referência fica no cadastro administrativo e não é enviado aos players. Se você só possui o vídeo na sua conta, obtenha o arquivo original por um meio autorizado, prepare uma cópia de áudio e hospede-a em uma URL HTTPS direta antes de publicar.
+
 As URLs são validadas quanto ao formato HTTPS. Para podcasts, o backend consulta o documento RSS/Atom, mas não baixa nem analisa o arquivo de áudio. Confirme a acessibilidade e o formato real do áudio nos dispositivos. Não coloque tokens privados ou senhas nas URLs: links publicados são públicos.
 
 O campo **Programação exclusiva de conteúdo gravado** registra sua declaração editorial; não filtra, fiscaliza nem modifica o áudio do AzuraCast. Nome, endereço AzuraCast e ID são disponibilizados na configuração pública para integrações. Os players gerenciados reproduzem os links cadastrados diretamente, sem consultar a API original para metadados. Não há consulta de ouvintes, teste de sinal, arte ou duração: `is_online` significa que existe principal publicado, e as contagens/durações do contrato de compatibilidade são zero.
@@ -87,7 +93,7 @@ Exemplo de conteúdo:
 }
 ```
 
-Tipos: `stream`, `audio`, `public_page`, `podcast_feed`. A confirmação de direitos é uma declaração administrativa; não é análise jurídica, certificado nem autorização emitida pelo backend.
+Tipos: `stream`, `audio`, `public_page`, `podcast_feed`. Para `audio`, o campo opcional `youtubeUrl` guarda o vídeo de referência; um rascunho com esse campo pode deixar `url` vazia. A confirmação de direitos é uma declaração administrativa; não é análise jurídica, certificado nem autorização emitida pelo backend.
 
 ## Publicar na Vercel
 

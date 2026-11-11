@@ -129,6 +129,48 @@ test("admin protection, publication rules, persistence and native contract", asy
     (await request("/api/admin/contents/999", "PUT", content)).status,
     404,
   );
+  const youtubeDraft = {
+    ...content,
+    title: "Episódio com vídeo de referência",
+    url: "",
+    youtubeUrl: "https://www.youtube.com/watch?v=abc123",
+    published: false,
+    primary: false,
+    rightsConfirmed: false,
+  };
+  const draftResponse = await request("/api/admin/contents", "POST", youtubeDraft);
+  assert.equal(draftResponse.status, 201);
+  const linkedDraft = await draftResponse.json();
+  assert.equal(linkedDraft.youtubeUrl, youtubeDraft.youtubeUrl);
+  assert.equal((await request(`/api/v1/podcast/${linkedDraft.id}/episodes`)).status, 404);
+  assert.equal(
+    (await request(`/api/admin/contents/${linkedDraft.id}`, "PUT", {
+      ...youtubeDraft,
+      published: true,
+      rightsConfirmed: true,
+    })).status,
+    400,
+  );
+  assert.equal(
+    (await request(`/api/admin/contents/${linkedDraft.id}`, "PUT", {
+      ...youtubeDraft,
+      url: youtubeDraft.youtubeUrl,
+    })).status,
+    400,
+  );
+  const ownAudio = "https://media.example.com/episode.m4a";
+  assert.equal(
+    (await request(`/api/admin/contents/${linkedDraft.id}`, "PUT", {
+      ...youtubeDraft,
+      url: ownAudio,
+      published: true,
+      rightsConfirmed: true,
+    })).status,
+    200,
+  );
+  const linkedEpisode = await (await request(`/api/v1/podcast/${linkedDraft.id}/episodes`)).json();
+  assert.equal(linkedEpisode[0].links.download, ownAudio);
+  assert.ok(!(await (await request("/api/v1/config")).json()).contents.some((c) => "youtubeUrl" in c));
   assert.equal(
     (await request(`/api/admin/contents/${second.id}`, "DELETE")).status,
     204,
@@ -179,6 +221,24 @@ test("SQLite retains settings and contents after reopening", async (t) => {
     "Persistido",
   );
   second.db.close();
+});
+
+test("existing databases gain the optional YouTube reference without losing contents", async (t) => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { openDatabase } = await import("../src/database.js");
+  const dir = mkdtempSync(join(tmpdir(), "luzia-youtube-migration-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const databasePath = join(dir, "old.sqlite");
+  const old = await openDatabase({ databasePath });
+  await old.exec('CREATE TABLE contents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, type TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL, published INTEGER NOT NULL, "primary" INTEGER NOT NULL, rightsConfirmed INTEGER NOT NULL, updatedAt TEXT NOT NULL);');
+  await old.prepare('INSERT INTO contents (title,type,url,description,published,"primary",rightsConfirmed,updatedAt) VALUES (?,?,?,?,?,?,?,?)').run("Episódio existente", "audio", "https://example.com/old.mp3", "", 1, 1, 1, new Date().toISOString());
+  old.close();
+  const { db } = await createApp({ databasePath, adminPassword: "migration-password" });
+  assert.equal((await db.prepare("SELECT youtubeUrl FROM contents").get()).youtubeUrl, "");
+  assert.equal((await db.prepare("SELECT title FROM contents").get()).title, "Episódio existente");
+  db.close();
 });
 
 test("independent instances share sessions, contents and login limits", async (t) => {

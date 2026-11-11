@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "render": "node render-screenshots.cjs"
+  },
+  "dependencies": {
+    "playwright-core": "1.56.1"
+  }
+}

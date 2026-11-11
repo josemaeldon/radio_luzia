@@ -92,7 +92,7 @@
                   ><select id="type" name="type" required>
                     <option value="">Selecione o tipo</option>
                     <option value="stream">Transmissão</option>
-                    <option value="audio">Áudio gravado</option>
+                    <option value="audio">Episódio / áudio gravado</option>
                     <option value="public_page">Página pública</option>
                     <option value="podcast_feed">
                       Podcast (RSS ou página pública)
@@ -100,7 +100,7 @@
                   </select>
                 </div>
               </div>
-              <label for="url">URL HTTPS <b>*</b></label
+              <label for="url">URL HTTPS do áudio ou conteúdo <b id="url-required">*</b></label
               ><input
                 id="url"
                 name="url"
@@ -112,6 +112,21 @@
               <p id="url-help" class="field-help">
                 Use o endereço direto do áudio ou da transmissão.
               </p>
+              <div id="youtube-field" hidden>
+                <label for="youtubeUrl">Vídeo do YouTube de referência</label>
+                <input
+                  id="youtubeUrl"
+                  name="youtubeUrl"
+                  type="url"
+                  maxlength="2048"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+                <p class="field-help">
+                  O vídeo fica registrado como referência. Para tocar somente o áudio no app,
+                  informe acima uma URL HTTPS direta do seu arquivo MP3, M4A ou outro áudio compatível.
+                  Você pode salvar um rascunho sem áudio, mas precisa dele antes de publicar.
+                </p>
+              </div>
               <label for="description">Descrição</label
               ><textarea
                 id="description"
@@ -140,8 +155,9 @@
             </form>
           </section>
           <p class="hint">
-            Podcasts do AzuraCast carregam os episódios automaticamente. Outras
-            páginas públicas abrem no navegador.
+            Podcasts do AzuraCast carregam os episódios automaticamente. Um vídeo do
+            YouTube pode acompanhar um episódio como referência, mas não é convertido
+            em áudio pelo painel. Outras páginas públicas abrem no navegador.
           </p>
         </section>
         <section id="settings-view" hidden>

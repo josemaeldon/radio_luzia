@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const types = {
   stream: "Transmissão",
-  audio: "Áudio gravado",
+  audio: "Episódio / áudio gravado",
   public_page: "Página pública",
   podcast_feed: "Podcast (RSS)",
 };
@@ -48,6 +48,11 @@ function resetEditor() {
   updateType();
 }
 function updateType() {
+  const audio = $("#type").value === "audio";
+  $("#youtube-field").hidden = !audio;
+  if (!audio) $("#youtubeUrl").value = "";
+  $("#url").required = !(audio && !$("#content-form").elements.published.checked && $("#youtubeUrl").value.trim());
+  $("#url-required").hidden = !$("#url").required;
   const podcastPage =
     /\/public\/[a-zA-Z0-9_-]+\/podcasts?\/[a-zA-Z0-9_-]+(?:\/feed)?\/?$/.test(
       $("#url").value.split(/[?#]/)[0],
@@ -60,6 +65,8 @@ function updateType() {
     $("#type").value === "podcast_feed" ||
     (podcastPage && $("#type").value === "public_page")
       ? "Use o RSS ou a página pública do podcast no AzuraCast. Como principal, os episódios serão reproduzidos em sequência e em loop."
+      : audio
+        ? "Use a URL HTTPS direta do arquivo de áudio. Para salvar só o link do YouTube, deixe este campo vazio e mantenha o item como rascunho."
       : link
         ? "Esta página será publicada como link, sem reprodução de áudio."
         : "Use o endereço direto do áudio ou da transmissão.";
@@ -89,7 +96,9 @@ async function loadContents() {
     subtitle.textContent =
       (item.primary ? "Reprodução principal · " : "") + item.url;
     title.append(subtitle);
-    row.insertCell().textContent = types[item.type];
+    row.insertCell().textContent = item.youtubeUrl
+      ? "Episódio com vídeo de referência"
+      : types[item.type];
     const badge = document.createElement("span");
     badge.className = "badge" + (item.published ? " published" : "");
     badge.textContent = item.published ? "Ativo" : "Rascunho";
@@ -114,7 +123,7 @@ async function loadContents() {
 function edit(item) {
   editId = item.id;
   const form = $("#content-form");
-  for (const key of ["title", "type", "url", "description"])
+  for (const key of ["title", "type", "url", "youtubeUrl", "description"])
     form.elements[key].value = item[key];
   for (const key of ["published", "primary", "rightsConfirmed"])
     form.elements[key].checked = item[key];
@@ -203,7 +212,7 @@ $("#content-form").onsubmit = async (event) => {
   const form = event.target,
     button = event.submitter;
   const content = Object.fromEntries(
-    ["title", "type", "url", "description"].map((k) => [
+    ["title", "type", "url", "youtubeUrl", "description"].map((k) => [
       k,
       form.elements[k].value,
     ]),
@@ -248,6 +257,8 @@ $("#settings-form").onsubmit = async (event) => {
 };
 $("#type").onchange = updateType;
 $("#url").oninput = updateType;
+$("#youtubeUrl").oninput = updateType;
+$("#content-form").elements.published.onchange = updateType;
 $("#cancel").onclick = resetEditor;
 $("#add").onclick = () => {
   resetEditor();

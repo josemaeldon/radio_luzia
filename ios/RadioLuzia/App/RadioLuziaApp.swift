@@ -19,6 +19,7 @@ struct RadioLuziaApp: App {
         switch ProcessInfo.processInfo.environment["STORE_PREVIEW"] {
         case "details": StationDetailsView()
         case "contents": PodcastsView()
+        case "episodes": PodcastsView()
         default: PlayerView()
         }
 #else

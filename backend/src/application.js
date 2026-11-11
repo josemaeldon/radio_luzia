@@ -24,14 +24,31 @@ const httpsUrl = z
   .max(2048)
   .url()
   .refine((value) => {
-    const u = new URL(value);
-    return u.protocol === "https:" && !u.username && !u.password;
+    try {
+      const u = new URL(value);
+      return u.protocol === "https:" && !u.username && !u.password;
+    } catch {
+      return false;
+    }
   }, "Use uma URL HTTPS sem credenciais.");
+const isYouTubeURL = (value) => {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com");
+  } catch {
+    return false;
+  }
+};
+const youtubeUrl = httpsUrl.refine(
+  isYouTubeURL,
+  "Use um link HTTPS do YouTube.",
+);
 const contentSchema = z
   .object({
     title: z.string().trim().min(1).max(150),
     type: z.enum(["stream", "audio", "public_page", "podcast_feed"]),
-    url: httpsUrl,
+    url: z.union([httpsUrl, z.literal("")]),
+    youtubeUrl: z.union([youtubeUrl, z.literal("")]).default(""),
     description: z.string().trim().max(2000).default(""),
     published: z.boolean(),
     primary: z.boolean(),
@@ -39,6 +56,21 @@ const contentSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.youtubeUrl && value.type !== "audio")
+      ctx.addIssue({
+        code: "custom",
+        message: "O link do YouTube só pode acompanhar um áudio gravado.",
+      });
+    if (!value.url && (value.published || value.type !== "audio" || !value.youtubeUrl))
+      ctx.addIssue({
+        code: "custom",
+        message: "Informe a URL HTTPS direta do áudio antes de publicar.",
+      });
+    if (value.url && isYouTubeURL(value.url) && ["audio", "stream"].includes(value.type))
+      ctx.addIssue({
+        code: "custom",
+        message: "O link do YouTube não é uma URL de áudio. Hospede o áudio original e informe o link direto.",
+      });
     if (value.published && !value.rightsConfirmed)
       ctx.addIssue({
         code: "custom",
@@ -90,12 +122,14 @@ export async function createApp({
     databaseUrl,
     databaseAuthToken,
   });
-  await db.exec(`CREATE TABLE IF NOT EXISTS contents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, type TEXT NOT NULL, url TEXT NOT NULL, description TEXT NOT NULL, published INTEGER NOT NULL, "primary" INTEGER NOT NULL, rightsConfirmed INTEGER NOT NULL, updatedAt TEXT NOT NULL);
+  await db.exec(`CREATE TABLE IF NOT EXISTS contents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, type TEXT NOT NULL, url TEXT NOT NULL, youtubeUrl TEXT NOT NULL DEFAULT '', description TEXT NOT NULL, published INTEGER NOT NULL, "primary" INTEGER NOT NULL, rightsConfirmed INTEGER NOT NULL, updatedAt TEXT NOT NULL);
     CREATE UNIQUE INDEX IF NOT EXISTS single_primary ON contents("primary") WHERE "primary" = 1;
     CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, hits INTEGER NOT NULL, resetAt INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS storage_metadata (id INTEGER PRIMARY KEY CHECK(id=1), instanceId TEXT NOT NULL, createdAt TEXT NOT NULL);`);
+  if (!(await db.prepare("PRAGMA table_info(contents)").all()).some((column) => column.name === "youtubeUrl"))
+    await db.exec("ALTER TABLE contents ADD COLUMN youtubeUrl TEXT NOT NULL DEFAULT '';");
   await db
     .prepare(
       "INSERT OR IGNORE INTO storage_metadata (id,instanceId,createdAt) VALUES (1,?,?)",
@@ -231,6 +265,7 @@ export async function createApp({
       content.title,
       content.type,
       content.url,
+      content.youtubeUrl,
       content.description,
       +content.published,
       +content.primary,
@@ -240,7 +275,7 @@ export async function createApp({
     if (id)
       await tx
         .prepare(
-          'UPDATE contents SET title=?, type=?, url=?, description=?, published=?, "primary"=?, rightsConfirmed=?, updatedAt=? WHERE id=?',
+          'UPDATE contents SET title=?, type=?, url=?, youtubeUrl=?, description=?, published=?, "primary"=?, rightsConfirmed=?, updatedAt=? WHERE id=?',
         )
         .run(...values, id);
     else
@@ -248,7 +283,7 @@ export async function createApp({
         (
           await tx
             .prepare(
-              'INSERT INTO contents (title,type,url,description,published,"primary",rightsConfirmed,updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+              'INSERT INTO contents (title,type,url,youtubeUrl,description,published,"primary",rightsConfirmed,updatedAt) VALUES (?,?,?,?,?,?,?,?,?)',
             )
             .run(...values)
         ).lastInsertRowid,
@@ -317,7 +352,7 @@ export async function createApp({
   app.get("/api/v1/config", async (_req, res) => {
     const publicContents = (await list())
       .filter((c) => c.published)
-      .map(({ rightsConfirmed, ...c }) => c);
+      .map(({ rightsConfirmed, youtubeUrl, ...c }) => c);
     res.set("Cache-Control", "no-store").json({
       version: 1,
       ...(await settings()),

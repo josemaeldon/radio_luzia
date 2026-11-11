@@ -33,6 +33,11 @@ struct PodcastsView: View {
             .task {
                 while !Task.isCancelled {
                     podcasts = (try? await AzuraCastAPI.shared.podcasts()) ?? []
+#if DEBUG
+                    if selected == nil, ProcessInfo.processInfo.environment["STORE_PREVIEW"] == "episodes" {
+                        selected = podcasts.first
+                    }
+#endif
                     if let selected {
                         episodes = (try? await AzuraCastAPI.shared.podcastEpisodes(selected.id)) ?? []
                     }

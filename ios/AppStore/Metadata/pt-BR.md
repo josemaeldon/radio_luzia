@@ -35,20 +35,21 @@ player,áudio,podcast,episódios,conteúdo,luzia,airplay
 
 ## Notas para revisão
 
-O aplicativo é um player nativo de áudios e podcasts publicados em uma API administrativa. A reprodução utiliza os links de áudio retornados pela API; feeds RSS/Atom são interpretados pelo backend para fornecer os episódios ao player nativo. Links de páginas públicas abrem externamente.
+Luzia Player é um aplicativo de podcast. O conteúdo principal publicado atualmente é o podcast “Programação Santa Luzia”, disponibilizado por feed RSS público. O nome “Rádio Santa Luzia” aparece em alguns metadados da origem do áudio, mas a experiência de reprodução apresentada nesta versão é de episódios de podcast gravados, escolhidos no catálogo ou reproduzidos como conteúdo principal.
 
-Não há login para ouvintes. O acesso administrativo é separado do aplicativo. O conteúdo principal e o catálogo dependem das publicações do administrador; o aplicativo não reproduz uma fonte alternativa quando a publicação deixa de estar disponível.
+Para avaliar o aplicativo:
 
-Fluxo para revisão:
+1. Abra o app. Na tela inicial, toque em **Ver conteúdos**.
+2. Selecione **Programação Santa Luzia** e toque em **Episódio 1**. O episódio começa a tocar no player nativo.
+3. Use o botão de pausa/reprodução na tela inicial. A reprodução também pode ser controlada na tela bloqueada, em segundo plano e por AirPlay.
+4. Na tela inicial, o botão **Reproduzir áudio** inicia o podcast definido como conteúdo principal. Quando houver vários episódios publicados nesse podcast, eles serão reproduzidos em sequência e a lista se repetirá ao terminar.
 
-1. Abra o aplicativo e toque em Reproduzir áudio, se houver conteúdo principal publicado.
-2. Abra Ver conteúdos, selecione um item e depois um episódio para iniciar a reprodução.
-3. Verifique os controles de mídia em segundo plano, na tela bloqueada e por AirPlay.
-4. Abra Sobre o conteúdo para consultar as informações e os links publicados.
+O catálogo e os episódios são carregados de uma API pública. Feed RSS do podcast: https://webradio.cloudbr.app/public/2/podcast/1f198580-e4ac-6ec2-9a34-05c23e63f501/feed
 
-Antes do envio, confirme a disponibilidade dos conteúdos de revisão e forneça à Apple a documentação de direitos de uso que for aplicável. O nome e a apresentação do aplicativo não substituem essa documentação.
+Não é necessário criar conta nem fazer login para ouvir. O acesso administrativo é separado do app.
 
 ## URLs e contato
 
+- Antes do envio, confirme que o podcast e o episódio acima continuam publicados e acessíveis e forneça à Apple a documentação de direitos de uso que for aplicável.
 - Preencha no App Store Connect URLs HTTPS públicas e válidas para suporte e política de privacidade.
 - Contato de suporte: admin@cloudbr.app

@@ -14,7 +14,7 @@
 - [ ] Compilar e testar a versão atual em iPhone e iPad.
 - [ ] Confirmar que a API e os conteúdos de revisão estão acessíveis publicamente.
 - [ ] Conferir título, descrição e imagens dos conteúdos publicados na API.
-- [ ] Gerar novas capturas de tela da interface atual.
+- [x] Gerar novas capturas de tela da interface atual para iPhone (1206 × 2622) e iPad (2048 × 2732).
 - [ ] Gerar um novo archive e exportar a versão atual.
 - [ ] Atualizar nome, descrição, palavras-chave e notas no App Store Connect.
 - [ ] Informar URLs válidas de suporte e privacidade.
@@ -22,4 +22,4 @@
 - [ ] Apresentar as autorizações de conteúdo que forem aplicáveis.
 - [ ] Selecionar o novo build e enviar para revisão.
 
-Os archives, IPAs e screenshots guardados anteriormente representam versões antigas. Não os use para descrever ou enviar esta interface. A aprovação será determinada pela revisão da Apple.
+Os archives e IPAs guardados anteriormente representam versões antigas. Não os use para enviar esta interface. As capturas atuais estão em `Screenshots/iPhone` e `Screenshots/iPad`. A aprovação será determinada pela revisão da Apple.
